@@ -12,7 +12,197 @@ See instructions. Delete this line and place a link to the user stories here.
 
 ## Steps necessary to run the software
 
-See instructions. Delete this line and place instructions to download, configure, and run the software here.
+The backend is a Flask JSON API backed by MongoDB. Frontend screens are still to
+be integrated by the team; opening `/` does not display a website yet.
+
+### 1. Install and start MongoDB
+
+Use Python 3.11 or newer and a running MongoDB Community server (8.0 recommended).
+For macOS with Homebrew:
+
+```bash
+brew tap mongodb/brew
+brew install mongodb-community@8.0
+brew services start mongodb-community@8.0
+```
+
+See the [official macOS installation guide](https://www.mongodb.com/docs/v8.0/tutorial/install-mongodb-on-os-x/)
+or [installation instructions for other operating systems](https://www.mongodb.com/docs/manual/installation/).
+MongoDB must be running separately from Flask. Its data persists on disk after
+Flask stops. `localhost` connects to each developer's own computer, so these
+local databases are not shared between teammates.
+
+### 2. Configure Python and environment variables
+
+```bash
+git clone https://github.com/Abel200595/web-app-exercise-smart-monkeys.git
+cd web-app-exercise-smart-monkeys
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+```
+
+On Windows, activate with `.venv\Scripts\activate` instead. If `.env` does not
+already exist, copy `env.example` to `.env`. Set `SECRET_KEY` to the output of:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+The local database settings are:
+
+```dotenv
+MONGO_URI=mongodb://localhost:27017/
+MONGO_DB_NAME=study_group_finder
+```
+
+`config.py` loads `.env` and reads all settings. Variables exported in the shell
+take precedence over `.env`; code defaults are used when neither sets a value.
+Keep the same `SECRET_KEY` for all web workers so login cookies work across them.
+`.env` is ignored by Git. Do not commit passwords or real connection credentials.
+
+### 3. Seed and run
+
+From the repository root with the virtual environment active:
+
+```bash
+python seed.py
+python app.py
+```
+
+Check `http://127.0.0.1:5000/api/health` and browse
+`http://127.0.0.1:5000/api/sessions`. Indexes are created automatically on startup.
+The seed script inserts four sample sessions and one local demo account:
+`organizer@example.test` / `StudyDemo2026!`. It preserves existing records on
+subsequent runs; it does not refresh expired sample sessions. Do not run this
+demo seeder against a production database.
+
+In a second terminal, activate the same virtual environment and run exactly one
+cleanup process:
+
+```bash
+python cleanup.py
+# Or perform one pass and exit:
+python cleanup.py --once
+```
+
+For a two-worker demo on macOS/Linux, use this **instead of** `python app.py`:
+
+```bash
+gunicorn --workers 2 --bind 127.0.0.1:5000 'app:create_app()'
+```
+
+Do not add `--preload`: each worker must construct its own MongoDB client after
+forking. Cleanup is not started inside Flask workers. Stop foreground processes
+with Ctrl+C. Restart them after changing environment settings.
+
+### 4. Test
+
+Tests require a running real MongoDB server and use a uniquely named disposable
+database per test; they never delete the application database.
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+To use another local test server:
+
+```bash
+TEST_MONGO_URI=mongodb://127.0.0.1:27018/ python -m pytest -q
+```
+
+Tests cover authentication, permissions, validation, CRUD, membership, deadlines,
+cleanup, repeatable seeding, and concurrent attempts to take the last seat.
+
+### Backend integration
+
+All endpoints return JSON except successful deletes/logouts, which return 204.
+Errors have the shape `{"error": "message"}`. IDs are strings; timestamps are
+ISO 8601 UTC strings. Submit times with an explicit timezone (`Z` or an offset).
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/api/health` | Check database connectivity |
+| GET | `/api/auth/csrf` | Get a CSRF token and session cookie |
+| POST | `/api/auth/register` | Register with name, email, password; log in |
+| POST | `/api/auth/login` | Log in with email and password |
+| POST | `/api/auth/logout` | Log out |
+| GET | `/api/auth/me` | Current user's profile |
+| GET | `/api/sessions` | Browse and search |
+| POST | `/api/sessions` | Create a session |
+| GET | `/api/sessions/<id>` | View details and participant names |
+| PATCH | `/api/sessions/<id>` | Organizer edits before registration closes |
+| DELETE | `/api/sessions/<id>` | Organizer deletes/cancels a session |
+| POST | `/api/sessions/<id>/join` | Join before the deadline |
+| POST | `/api/sessions/<id>/leave` | Leave a joined session |
+
+Browse filters: `course`, `topic` (case-insensitive literal substring), `date`
+(`YYYY-MM-DD`, UTC), `session_type` (`in_person` or `virtual`), `mine=true`,
+`available=true`, `page` (default 1), and `limit` (default 20, maximum 100).
+`mine=true`, detail, and write endpoints require login. Public browse responses
+exclude location, meeting links, and member IDs.
+
+Example create payload (replace the times with future dates):
+
+```json
+{
+  "course": "CSCI-UA 480",
+  "topic": "Database design",
+  "start_at": "2030-10-20T15:00:00-04:00",
+  "end_at": "2030-10-20T16:00:00-04:00",
+  "session_type": "in_person",
+  "location": "Bobst Library",
+  "min_participants": 2,
+  "max_participants": 8
+}
+```
+
+For virtual sessions, use `session_type: "virtual"` and an HTTP(S) `meeting_url`
+instead of `location`. Participant limits are optional.
+
+Authentication uses Flask-Login cookies. For every POST/PATCH/DELETE, first fetch
+`/api/auth/csrf` and send its token in the `X-CSRFToken` header, with the same
+cookie. Fetch a fresh token after login, registration, or logout, which resets
+the session. A same-origin frontend can use:
+
+```javascript
+const { csrf_token } = await fetch('/api/auth/csrf').then(r => r.json());
+const response = await fetch('/api/sessions', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf_token },
+  body: JSON.stringify(sessionData)
+});
+```
+
+### Data and concurrency rules
+
+- `users`: name, normalized unique email, password hash, creation time.
+- `sessions`: course/topic, start/end, type/location/link, organizer ID,
+  participant ID array, participant limits, deadline, status, revision and timestamps.
+- The organizer is automatically the first participant and cannot leave their
+  own session; they can delete it. Membership is stored only on the session.
+- Defaults are minimum 10, maximum 40. Overrides must satisfy
+  `2 <= min <= max <= 40`, with bounds/defaults configurable in the environment.
+- The deadline is `min(created_at + registration_window, start_at)`. The default
+  window is 1,440 minutes. Editing can shorten but never extend the deadline.
+- Join uses one atomic MongoDB update checking the deadline, duplicates and
+  capacity. An edit cannot lower capacity below current membership. Concurrent
+  edits or membership changes can cause a 409; refresh before retrying an edit.
+- Cleanup runs every 60 seconds by default. After the deadline, it deletes
+  underfilled sessions or marks sufficiently filled sessions `confirmed`.
+  `waiting` means registration has not yet been finalized, regardless of count.
+- Between the deadline and cleanup, membership is frozen. Confirmed participants
+  may leave until the session ends, without triggering automatic deletion.
+  Joining and editing remain closed after the registration deadline.
+- `display_status` derives `full`, `completed` (after end time), or
+  `pending_cleanup`; persisted status is `waiting` or `confirmed`. Cancellation
+  is a physical deletion, so there is no retained `cancelled` record.
+- One independent cleanup process is sufficient; no lease-lock collection is
+  needed. Cleanup uses conditional database writes and is safe to rerun.
+
+Automatic similar-session suggestions, schedule-conflict detection, and the six
+frontend screens are not implemented in this backend foundation.
 
 ## Task boards
 
