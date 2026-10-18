@@ -2,9 +2,10 @@
 
 import re
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, request, session
+from flask import Flask, jsonify, render_template, request, session
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
@@ -14,7 +15,6 @@ from werkzeug.security import check_password_hash
 
 from config import Config
 from db import DomainError, Store, object_id, public_session, public_user, utcnow
-
 
 class MongoJSONProvider(DefaultJSONProvider):
     @staticmethod
@@ -131,7 +131,6 @@ def create_app(test_config=None):
     @login_required
     def me():
         return jsonify(user=public_user(current_user.document))
-    from flask import render_template
 
     @app.get("/create-session")
     def create_session_page():
@@ -187,6 +186,49 @@ def create_app(test_config=None):
                 result.pop(key, None)
             results.append(result)
         return jsonify(sessions=results, page=page, limit=limit)
+
+    @app.get("/")
+    def home_page():
+
+        # Only display future sessions that can accept participants.
+        query = {
+            "status": {"$in": ["waiting", "confirmed"]},
+            "start_at": {"$gt": utcnow()},
+            "$expr": {
+                "$lt": [
+                    {"$size": "$participant_ids"},
+                    "$max_participants"
+                ]
+            }
+        }
+
+        documents = (store.sessions.find(query).sort([("start_at", 1), ("_id", 1)]).limit(20))
+
+        sessions = []
+
+        for document in documents:
+            session_data = public_session(document)
+
+            # Get the session's start time from MongoDB.
+            start_time = document["start_at"]
+
+            # PyMongo may return a datetime without timezone information.
+            # The database stores timestamps in UTC.
+            if start_time.tzinfo is None : start_time = start_time.replace(tzinfo=timezone.utc)
+
+            # Convert UTC time into New York time.
+            ny_time = start_time.astimezone(ZoneInfo("America/New_York"))
+
+            # Format the time for display.
+            session_data["display_start"] = ny_time.strftime("%b %d, %Y at %I:%M %p %Z")
+
+            # Hide private details from public browsing.
+            for field in ("participant_ids", "meeting_url", "location"):
+                session_data.pop(field, None)
+
+            sessions.append(session_data)
+
+        return render_template("index.html", sessions=sessions)
 
     @app.post("/api/sessions")
     @login_required

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}Browse Sessions | Study Group Finder{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">Browse Study Sessions</h1>
+
+<p>Find upcoming study groups for your courses.</p>
+
+<p>
+    Showing {{ sessions|length }} available study sessions
+</p>
+
+<section class="session-grid">
+
+    {% for session in sessions %}
+
+    <article class="session-card">
+
+        <h3>{{ session.course }}</h3>
+
+        <p>
+            <strong>Topic:</strong>
+            {{ session.topic }}
+        </p>
+
+        <p>
+            <strong>Date:</strong>
+            {{ session.display_start }}
+        </p>
+
+        <p>
+            <strong>Type:</strong>
+            {{ session.session_type | replace("_", " ") | title }}
+        </p>
+
+        <p>
+            <strong>Participants:</strong>
+            {{ session.participant_count }}
+            / {{ session.max_participants }}
+        </p>
+
+        <p>
+            <strong>Status:</strong>
+            {{ session.display_status | title }}
+        </p>
+
+    </article>
+
+    {% else %}
+
+    <p>
+        No available study sessions right now.
+        Check back later!
+    </p>
+
+    {% endfor %}
+
+</section>
+
+{% endblock %}
