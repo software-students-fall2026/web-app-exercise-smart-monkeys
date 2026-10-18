@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Search Sessions | Study Group Finder{% endblock %}
+
+{% block content %}
+<h1>Search Study Sessions</h1>
+
+<form action="{{ url_for('search_page') }}" method="get">
+    <p>
+        <label for="course">Course</label>
+        <input id="course"
+               name="course"
+               type="text"
+               maxlength="200"
+               placeholder="e.g. CSCI"
+               value="{{ filters.course }}">
+    </p>
+
+    <p>
+        <label for="topic">Topic</label>
+        <input id="topic"
+               name="topic"
+               type="text"
+               maxlength="200"
+               placeholder="e.g. Linked lists"
+               value="{{ filters.topic }}">
+    </p>
+
+    <p>
+        <label for="date">Date (New York)</label>
+        <input id="date"
+               name="date"
+               type="date"
+               value="{{ filters.date }}">
+    </p>
+
+    <p>
+        <label for="session_type">Session type</label>
+        <select id="session_type" name="session_type">
+            <option value="">All types</option>
+
+            <option value="in_person"
+                {% if filters.session_type == "in_person" %}selected{% endif %}>
+                In person
+            </option>
+
+            <option value="virtual"
+                {% if filters.session_type == "virtual" %}selected{% endif %}>
+                Virtual
+            </option>
+        </select>
+    </p>
+
+    <button type="submit">Search</button>
+    <a href="{{ url_for('search_page') }}">Clear filters</a>
+</form>
+
+<p>All dates and times are shown in New York time.</p>
+
+{% if error %}
+    <p role="alert">{{ error }}</p>
+{% else %}
+    <p>
+        Showing {{ sessions|length }} sessions on page {{ page }}.
+    </p>
+
+    <section class="session-grid" aria-label="Search results">
+        {% for session in sessions %}
+            <article class="session-card">
+                <h2>{{ session.course }}</h2>
+
+                <p>
+                    <strong>Topic:</strong>
+                    {{ session.topic }}
+                </p>
+
+                <p>
+                    <strong>Starts:</strong>
+                    {{ session.start_at | display_ny }}
+                </p>
+
+                <p>
+                    <strong>Type:</strong>
+                    {{ session.session_type | replace("_", " ") | title }}
+                </p>
+
+                <p>
+                    <strong>Participants:</strong>
+                    {{ session.participant_count }}
+                    / {{ session.max_participants }}
+                </p>
+
+                <p>
+                    <strong>Status:</strong>
+                    {{ session.display_status | title }}
+                </p>
+
+                <a class="session-details-link"
+                   href="{{ url_for('session_detail_page',
+                                    session_id=session._id|string) }}">
+                    View details
+                </a>
+            </article>
+        {% else %}
+            <p>No sessions found on this page.</p>
+        {% endfor %}
+    </section>
+
+    <nav aria-label="Results pages">
+        {% if previous_url %}
+            <a href="{{ previous_url }}">Previous</a>
+        {% endif %}
+
+        <span>Page {{ page }}</span>
+
+        {% if next_url %}
+            <a href="{{ next_url }}">Next</a>
+        {% endif %}
+    </nav>
+{% endif %}
+{% endblock %}
