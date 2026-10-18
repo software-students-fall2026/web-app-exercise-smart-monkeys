@@ -21,8 +21,8 @@ def main():
         while True:
             try:
                 result = store.cleanup_expired()
-                logging.info("Deleted %s underfilled sessions; confirmed %s sessions.",
-                             result["deleted"], result["confirmed"])
+                logging.info("Closed %s underfilled sessions; confirmed %s sessions.",
+                             result["closed"], result["confirmed"])
             except PyMongoError as error:
                 logging.error("Cleanup failed (%s); retrying next interval.", type(error).__name__)
                 if args.once:

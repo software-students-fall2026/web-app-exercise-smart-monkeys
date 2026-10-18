@@ -1,7 +1,7 @@
 """MongoDB access and session rules shared by HTTP and cleanup processes."""
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from bson import ObjectId
@@ -105,7 +105,7 @@ class Store:
     def ensure_indexes(self):
         self.users.create_index("email", unique=True)
         self.sessions.create_index([("participant_ids", ASCENDING), ("start_at", ASCENDING)])
-        self.sessions.create_index([("status", ASCENDING), ("registration_deadline", ASCENDING)])
+        self.sessions.create_index([("status", ASCENDING), ("start_at", ASCENDING)])
         self.sessions.create_index("start_at")
 
     def create_user(self, data):
@@ -135,13 +135,11 @@ class Store:
             raise DomainError("Unknown or read-only session fields.")
         now = utcnow()
         document = validate_session(data, settings, now)
+        # Registration stays open until start_at; the organizer is participant one.
         document.update(
-            organizer_id=user_id, participant_ids=[user_id], status="waiting", revision=1,
-            created_at=now, updated_at=now,
-            registration_deadline=min(
-                now + timedelta(minutes=settings["REGISTRATION_WINDOW_MINUTES"]),
-                document["start_at"],
-            ),
+            organizer_id=user_id, participant_ids=[user_id],
+            status="confirmed" if document["min_participants"] <= 1 else "waiting",
+            revision=1, created_at=now, updated_at=now,
         )
         self.sessions.insert_one(document)
         return document
@@ -153,15 +151,25 @@ class Store:
         if old["organizer_id"] != user_id:
             raise DomainError("Only the organizer can edit this session.", 403)
         now = utcnow()
+        # Check the deadline first so an expired start_at reports 409, not a
+        # validation error about the old start time.
+        if old["status"] not in ("waiting", "confirmed") or old["start_at"] <= now:
+            raise DomainError("Registration closed; the session can no longer be edited.", 409)
         updated = validate_session({**old, **changes}, settings, now)
-        # Rescheduling never extends the original registration window.
-        updated["registration_deadline"] = min(old["registration_deadline"], updated["start_at"])
         updated["updated_at"] = now
+        # $literal keeps user-supplied strings from being read as aggregation paths.
+        values = {key: {"$literal": value} for key, value in updated.items()}
+        # New limits can flip waiting/confirmed, so recompute status in the same write.
+        values["status"] = {"$cond": [
+            {"$gte": [{"$size": "$participant_ids"}, updated["min_participants"]]},
+            "confirmed", "waiting",
+        ]}
+        values["revision"] = {"$add": ["$revision", 1]}
         result = self.sessions.find_one_and_update(
             {"_id": old["_id"], "organizer_id": user_id, "revision": old["revision"],
-             "status": "waiting", "registration_deadline": {"$gt": now},
+             "status": {"$in": ["waiting", "confirmed"]}, "start_at": {"$gt": now},
              "$expr": {"$lte": [{"$size": "$participant_ids"}, updated["max_participants"]]}},
-            {"$set": updated, "$inc": {"revision": 1}},
+            [{"$set": values}],
             return_document=ReturnDocument.AFTER,
         )
         if result is None:
@@ -176,13 +184,19 @@ class Store:
 
     def join_session(self, session_id, user_id):
         now = utcnow()
+        # Membership and status change in one atomic pipeline: reaching
+        # min_participants before the deadline flips the session to confirmed.
+        grown = {"$concatArrays": ["$participant_ids", [user_id]]}
         result = self.sessions.find_one_and_update(
-            {"_id": object_id(session_id), "status": "waiting",
-             "registration_deadline": {"$gt": now}, "start_at": {"$gt": now},
-             "participant_ids": {"$ne": user_id},
+            {"_id": object_id(session_id), "status": {"$in": ["waiting", "confirmed"]},
+             "start_at": {"$gt": now}, "participant_ids": {"$ne": user_id},
              "$expr": {"$lt": [{"$size": "$participant_ids"}, "$max_participants"]}},
-            {"$addToSet": {"participant_ids": user_id}, "$set": {"updated_at": now},
-             "$inc": {"revision": 1}},
+            [{"$set": {
+                "participant_ids": grown,
+                "status": {"$cond": [{"$gte": [{"$size": grown}, "$min_participants"]},
+                                     "confirmed", "waiting"]},
+                "updated_at": now, "revision": {"$add": ["$revision", 1]},
+            }}],
             return_document=ReturnDocument.AFTER,
         )
         if result is None:
@@ -192,31 +206,44 @@ class Store:
 
     def leave_session(self, session_id, user_id):
         now = utcnow()
+        # Leaving re-evaluates the state machine: back to waiting before the
+        # deadline, closed after the deadline once the count drops below minimum.
+        remaining = {"$filter": {"input": "$participant_ids",
+                                 "cond": {"$ne": ["$$this", user_id]}}}
         result = self.sessions.find_one_and_update(
             {"_id": object_id(session_id), "organizer_id": {"$ne": user_id},
              "participant_ids": user_id, "end_at": {"$gt": now},
-             "$or": [{"registration_deadline": {"$gt": now}}, {"status": "confirmed"}]},
-            {"$pull": {"participant_ids": user_id}, "$set": {"updated_at": now},
-             "$inc": {"revision": 1}},
+             "status": {"$in": ["waiting", "confirmed"]}},
+            [{"$set": {
+                "participant_ids": remaining,
+                "status": {"$switch": {"branches": [
+                    {"case": {"$gte": [{"$size": remaining}, "$min_participants"]},
+                     "then": "confirmed"},
+                    {"case": {"$gt": ["$start_at", now]}, "then": "waiting"},
+                ], "default": "closed"}},
+                "updated_at": now, "revision": {"$add": ["$revision", 1]},
+            }}],
             return_document=ReturnDocument.AFTER,
         )
         if result is None:
             self.get_session(session_id)
-            raise DomainError("Cannot leave: organizer, not joined, completed, or awaiting deadline processing.", 409)
+            raise DomainError("Cannot leave: organizer, not joined, completed, or closed.", 409)
         return result
 
     def cleanup_expired(self, now=None):
+        """Settle sessions whose deadline (start_at) passed while still waiting."""
         now = now or utcnow()
-        expired = {"status": "waiting", "registration_deadline": {"$lte": now}}
+        due = {"status": "waiting", "start_at": {"$lte": now}}
         # The current count is checked inside each atomic write, not in Python.
-        deleted = self.sessions.delete_many({
-            **expired, "$expr": {"$lt": [{"$size": "$participant_ids"}, "$min_participants"]},
-        })
+        closed = self.sessions.update_many(
+            {**due, "$expr": {"$lt": [{"$size": "$participant_ids"}, "$min_participants"]}},
+            {"$set": {"status": "closed", "updated_at": now}, "$inc": {"revision": 1}},
+        )
         confirmed = self.sessions.update_many(
-            {**expired, "$expr": {"$gte": [{"$size": "$participant_ids"}, "$min_participants"]}},
+            {**due, "$expr": {"$gte": [{"$size": "$participant_ids"}, "$min_participants"]}},
             {"$set": {"status": "confirmed", "updated_at": now}, "$inc": {"revision": 1}},
         )
-        return {"deleted": deleted.deleted_count, "confirmed": confirmed.modified_count}
+        return {"closed": closed.modified_count, "confirmed": confirmed.modified_count}
 
 
 def public_user(document):
@@ -225,14 +252,17 @@ def public_user(document):
 
 def public_session(document):
     result = dict(document)
+    result.pop("registration_deadline", None)  # Legacy field on pre-migration records.
     result["participant_count"] = len(document["participant_ids"])
     now = utcnow()
-    result["registration_open"] = document["status"] == "waiting" and document["registration_deadline"] > now
-    if document["end_at"] <= now:
+    before_deadline = document["start_at"] > now
+    result["registration_open"] = document["status"] in ("waiting", "confirmed") and before_deadline
+    if document["status"] == "closed" or (document["status"] == "waiting" and not before_deadline):
+        # Underfilled past the deadline; cleanup persists "closed" shortly.
+        result["display_status"] = "closed"
+    elif document["end_at"] <= now:
         result["display_status"] = "completed"
-    elif document["status"] == "waiting" and not result["registration_open"]:
-        result["display_status"] = "pending_cleanup"
-    elif result["participant_count"] >= document["max_participants"]:
+    elif result["registration_open"] and result["participant_count"] >= document["max_participants"]:
         result["display_status"] = "full"
     else:
         result["display_status"] = document["status"]

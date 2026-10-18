@@ -64,8 +64,8 @@ def test_create_browse_detail_search_and_permissions(app):
     document = create(owner)
     sid = document["_id"]
     assert document["participant_ids"] == [str(owner_id)]
-    assert document["min_participants"] == 10
-    assert document["max_participants"] == 40
+    assert document["min_participants"] == 2
+    assert document["max_participants"] == 8
     assert document["participant_count"] == 1
     assert len(owner.get("/api/sessions?course=csci&topic=mongo").json["sessions"]) == 1
     assert owner.get("/api/sessions?topic=.*").json["sessions"] == []
@@ -94,38 +94,51 @@ def test_invalid_session_rejected(app, changes):
     assert response.status_code == 400, response.json
 
 
-def test_membership_capacity_and_deadline(app, store):
+def test_membership_capacity_and_status_state_machine(app, store):
     owner, _ = register(app)
     member, _ = register(app, "member@example.test")
     third, _ = register(app, "third@example.test")
     document = create(owner, min_participants=2, max_participants=2)
     sid = document["_id"]
-    assert write(member, "POST", f"/api/sessions/{sid}/join").status_code == 200
+    assert document["status"] == "waiting"
+    # Reaching the minimum before the deadline flips the session to confirmed.
+    joined = write(member, "POST", f"/api/sessions/{sid}/join")
+    assert joined.status_code == 200
+    assert joined.json["session"]["status"] == "confirmed"
     assert len(member.get("/api/sessions?mine=true").json["sessions"]) == 1
     assert write(member, "POST", f"/api/sessions/{sid}/join").status_code == 409
     assert write(third, "POST", f"/api/sessions/{sid}/join").status_code == 409
     assert write(owner, "POST", f"/api/sessions/{sid}/leave").status_code == 409
-    assert write(member, "POST", f"/api/sessions/{sid}/leave").status_code == 200
+    # Dropping below the minimum before the deadline switches back to waiting.
+    left = write(member, "POST", f"/api/sessions/{sid}/leave")
+    assert left.status_code == 200
+    assert left.json["session"]["status"] == "waiting"
     assert write(third, "POST", f"/api/sessions/{sid}/join").status_code == 200
-    store.sessions.update_one({"_id": object_id(sid)}, {"$set": {"registration_deadline": utcnow()}})
+    # The registration deadline is start_at; move it into the past.
+    store.sessions.update_one({"_id": object_id(sid)},
+                              {"$set": {"start_at": utcnow() - timedelta(seconds=1)}})
     assert write(member, "POST", f"/api/sessions/{sid}/join").status_code == 409
     assert write(owner, "PATCH", f"/api/sessions/{sid}", {"topic": "Too late"}).status_code == 409
-    # Freeze membership until cleanup classifies the deadline result.
-    assert write(third, "POST", f"/api/sessions/{sid}/leave").status_code == 409
-    assert store.cleanup_expired() == {"deleted": 0, "confirmed": 1}
-    assert write(third, "POST", f"/api/sessions/{sid}/leave").status_code == 200
-    assert store.cleanup_expired() == {"deleted": 0, "confirmed": 0}
+    # The session confirmed inline before the deadline, so cleanup settles nothing.
+    assert store.cleanup_expired() == {"closed": 0, "confirmed": 0}
     assert store.get_session(sid)["status"] == "confirmed"
+    # Leaving after the deadline below the minimum closes the session but keeps it.
+    left = write(third, "POST", f"/api/sessions/{sid}/leave")
+    assert left.status_code == 200
+    assert left.json["session"]["status"] == "closed"
+    assert store.get_session(sid)["status"] == "closed"
 
 
-def test_deadline_capped_at_start_and_capacity_not_shrunk_below_members(app, store):
+def test_deadline_is_start_time_and_capacity_not_shrunk_below_members(app, store):
     owner, _ = register(app)
     member, _ = register(app, "member@example.test")
     third, _ = register(app, "third@example.test")
     start = utcnow() + timedelta(minutes=10)
     document = create(owner, min_participants=2, max_participants=3,
                       start_at=start.isoformat(), end_at=(start + timedelta(hours=1)).isoformat())
-    assert document["registration_deadline"] == document["start_at"]
+    assert "registration_deadline" not in document
+    assert write(owner, "POST", "/api/sessions",
+                 {k: v for k, v in payload().items() if k != "start_at"}).status_code == 400
     sid = document["_id"]
     assert write(member, "POST", f"/api/sessions/{sid}/join").status_code == 200
     assert write(third, "POST", f"/api/sessions/{sid}/join").status_code == 200
@@ -170,21 +183,22 @@ def test_concurrent_duplicate_joins(app, store):
     assert store.get_session(document["_id"])["participant_ids"].count(member) == 1
 
 
-def test_cleanup_only_removes_underfilled_expired_sessions(app, store):
+def test_cleanup_closes_underfilled_and_confirms_filled_sessions(app, store):
     owner, _ = register(app)
     underfilled = create(owner)
     sufficient = create(owner, min_participants=2)
     future = create(owner)
     store.join_session(sufficient["_id"], ObjectId())
+    # Backdate both deadlines; reset "sufficient" to waiting so the sweep settles it.
     store.sessions.update_many(
         {"_id": {"$in": [object_id(underfilled["_id"]), object_id(sufficient["_id"])]}},
-        {"$set": {"registration_deadline": utcnow() - timedelta(seconds=1)}},
+        {"$set": {"start_at": utcnow() - timedelta(seconds=1), "status": "waiting"}},
     )
-    assert store.cleanup_expired() == {"deleted": 1, "confirmed": 1}
-    assert store.sessions.find_one({"_id": object_id(underfilled["_id"])}) is None
+    assert store.cleanup_expired() == {"closed": 1, "confirmed": 1}
+    assert store.get_session(underfilled["_id"])["status"] == "closed"
     assert store.get_session(sufficient["_id"])["status"] == "confirmed"
     assert store.get_session(future["_id"])["status"] == "waiting"
-    assert store.cleanup_expired() == {"deleted": 0, "confirmed": 0}
+    assert store.cleanup_expired() == {"closed": 0, "confirmed": 0}
 
 
 def test_seed_is_repeatable_and_preserves_edits(store):

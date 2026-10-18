@@ -28,18 +28,19 @@ def _get_positive_int(name: str, default: int) -> int:
 class Config:
     """Shared settings for the Flask app and background cleanup process."""
 
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-    MONGO_DB_NAME = os.getenv("MONGO_DB_NAME", "study_group_finder")
+    MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/")
+    MONGO_DB_NAME = os.getenv("MONGODB_DB", "study_group_finder")
     SECRET_KEY = os.getenv("SECRET_KEY", "")
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     MAX_CONTENT_LENGTH = 16 * 1024
 
+    # Study groups are small; explicit values in the create request always win.
     DEFAULT_MAX_PARTICIPANTS = _get_positive_int(
-        "DEFAULT_MAX_PARTICIPANTS", 40
+        "DEFAULT_MAX_PARTICIPANTS", 8
     )
     DEFAULT_MIN_PARTICIPANTS = _get_positive_int(
-        "DEFAULT_MIN_PARTICIPANTS", 10
+        "DEFAULT_MIN_PARTICIPANTS", 2
     )
     MAX_ALLOWED_PARTICIPANTS = _get_positive_int(
         "MAX_ALLOWED_PARTICIPANTS", 40
@@ -48,9 +49,6 @@ class Config:
         "MIN_ALLOWED_PARTICIPANTS", 2
     )
 
-    REGISTRATION_WINDOW_MINUTES = _get_positive_int(
-        "REGISTRATION_WINDOW_MINUTES", 1440
-    )
     CLEANUP_INTERVAL_SECONDS = _get_positive_int(
         "CLEANUP_INTERVAL_SECONDS", 60
     )
