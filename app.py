@@ -131,6 +131,12 @@ def create_app(test_config=None):
     @login_required
     def me():
         return jsonify(user=public_user(current_user.document))
+    from flask import render_template
+
+    @app.get("/create-session")
+    def create_session_page():
+        return render_template("create_session.html")
+        
 
     @app.get("/api/sessions")
     def browse_sessions():
