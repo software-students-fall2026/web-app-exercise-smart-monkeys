@@ -1,201 +1,177 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Create Study Session</title>
+{% extends "base.html" %}
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f5f5f5;
-            padding: 20px;
-        }
+{% block title %}Create Study Session{% endblock %}
 
-        .container {
-            max-width: 400px;
-            margin: 30px auto;
-            padding: 20px;
-            background: white;
-            border-radius: 8px;
-        }
+{% block content %}
 
-        h1 {
-            text-align: center;
-        }
+<h1 class="page-title">Create Study Session</h1>
+<p>Fill out the form to organize a study session.</p>
 
-        label {
-            display: block;
-            margin-top: 15px;
-        }
+<div class="form-container">
+    <form id="sessionForm">
 
-        input, select, button {
-            box-sizing: border-box;
-            width: 100%;
-            padding: 10px;
-            margin-top: 5px;
-        }
-
-        button {
-            background: #465ed1;
-            color: white;
-            border: none;
-            margin-top: 20px;
-            cursor: pointer;
-        }
-
-        #message {
-            margin-top: 15px;
-        }
-    </style>
-</head>
-
-<body>
-    <div class="container">
-        <h1>Create Study Session</h1>
-        <p>Fill out the form to organize a study session.</p>
-
-        <form id="sessionForm">
-
+        <div class="form-group">
             <label for="course">Course:</label>
-            <input type="text" id="course" required>
+            <input type="text" id="course" class="form-control"
+                   placeholder="e.g. CSCI-UA 480" required>
+        </div>
 
+        <div class="form-group">
             <label for="topic">Topic:</label>
-            <input type="text" id="topic" required>
+            <input type="text" id="topic" class="form-control"
+                   placeholder="e.g. Midterm Review" required>
+        </div>
 
+        <div class="form-group">
             <label for="start">Start Date and Time:</label>
-            <input type="datetime-local" id="start" required>
+            <input type="datetime-local" id="start"
+                   class="form-control" required>
+        </div>
 
+        <div class="form-group">
             <label for="end">End Date and Time:</label>
-            <input type="datetime-local" id="end" required>
+            <input type="datetime-local" id="end"
+                   class="form-control" required>
+        </div>
 
+        <div class="form-group">
             <label for="type">Session Type:</label>
-            <select id="type">
+            <select id="type" class="form-control">
                 <option value="in_person">In Person</option>
                 <option value="virtual">Virtual</option>
             </select>
+        </div>
 
+        <div class="form-group">
             <label for="location" id="locationLabel">Location:</label>
-            <input type="text" id="location"
+            <input type="text" id="location" class="form-control"
                    placeholder="e.g. Bobst Library" required>
+        </div>
 
+        <div class="form-group">
             <label for="minimum">Minimum Participants:</label>
-            <input type="number" id="minimum"
+            <input type="number" id="minimum" class="form-control"
                    value="2" min="2" max="40" required>
+        </div>
 
+        <div class="form-group">
             <label for="maximum">Maximum Participants:</label>
-            <input type="number" id="maximum"
+            <input type="number" id="maximum" class="form-control"
                    value="8" min="2" max="40" required>
+        </div>
 
-            <button type="submit">Create Session</button>
+        <button type="submit" class="btn">Create Session</button>
+    </form>
 
-        </form>
+    <p id="message" role="status" aria-live="polite"></p>
+</div>
 
-        <p id="message" role="status"></p>
-    </div>
+<script>
+    const form = document.getElementById("sessionForm");
+    const type = document.getElementById("type");
+    const locationInput = document.getElementById("location");
+    const message = document.getElementById("message");
 
-    <script>
-        const form = document.getElementById("sessionForm");
-        const type = document.getElementById("type");
-        const locationInput = document.getElementById("location");
-        const message = document.getElementById("message");
+    type.addEventListener("change", function() {
+        if (type.value === "virtual") {
+            document.getElementById("locationLabel").textContent =
+                "Meeting Link:";
+            locationInput.placeholder = "https://zoom.us/...";
+            locationInput.type = "url";
+        } else {
+            document.getElementById("locationLabel").textContent =
+                "Location:";
+            locationInput.placeholder = "e.g. Bobst Library";
+            locationInput.type = "text";
+        }
+        locationInput.value = "";
+    });
 
-        type.addEventListener("change", function() {
-            if (type.value === "virtual") {
-                document.getElementById("locationLabel").textContent =
-                    "Meeting Link:";
-                locationInput.placeholder = "https://zoom.us/...";
-                locationInput.type = "url";
-            } else {
-                document.getElementById("locationLabel").textContent =
-                    "Location:";
-                locationInput.placeholder = "e.g. Bobst Library";
-                locationInput.type = "text";
+    form.addEventListener("submit", async function(event) {
+        event.preventDefault();
+        message.textContent = "";
+
+        const start = new Date(document.getElementById("start").value);
+        const end = new Date(document.getElementById("end").value);
+
+        const minimum = Number(
+            document.getElementById("minimum").value
+        );
+        const maximum = Number(
+            document.getElementById("maximum").value
+        );
+
+        if (start <= new Date()) {
+            message.textContent = "Choose a future start time.";
+            return;
+        }
+
+        if (end <= start) {
+            message.textContent = "End time must be after start time.";
+            return;
+        }
+
+        if (minimum > maximum) {
+            message.textContent =
+                "Minimum cannot be greater than maximum.";
+            return;
+        }
+
+        const data = {
+            course: document.getElementById("course").value.trim(),
+            topic: document.getElementById("topic").value.trim(),
+            start_at: start.toISOString(),
+            end_at: end.toISOString(),
+            session_type: type.value,
+            min_participants: minimum,
+            max_participants: maximum
+        };
+
+        if (type.value === "virtual") {
+            data.meeting_url = locationInput.value.trim();
+        } else {
+            data.location = locationInput.value.trim();
+        }
+
+        try {
+            const tokenResponse = await fetch("/api/auth/csrf");
+
+            if (!tokenResponse.ok) {
+                throw new Error("Could not get security token.");
             }
-            locationInput.value = "";
-        });
 
-        form.addEventListener("submit", async function(event) {
-            event.preventDefault();
-            message.textContent = "";
+            const tokenData = await tokenResponse.json();
 
-            const start = new Date(document.getElementById("start").value);
-            const end = new Date(document.getElementById("end").value);
+            const response = await fetch("/api/sessions", {
+                method: "POST",
+                credentials: "same-origin",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": tokenData.csrf_token
+                },
+                body: JSON.stringify(data)
+            });
 
-            const minimum = Number(
-                document.getElementById("minimum").value
-            );
-            const maximum = Number(
-                document.getElementById("maximum").value
-            );
+            const result = await response.json();
 
-            if (start <= new Date()) {
-                message.textContent = "Choose a future start time.";
-                return;
+            if (!response.ok) {
+                throw new Error(
+                    result.error || "Failed to create session."
+                );
             }
 
-            if (end <= start) {
-                message.textContent = "End time must be after start time.";
-                return;
-            }
+            message.textContent = "Session created successfully!";
+            form.reset();
 
-            if (minimum > maximum) {
-                message.textContent =
-                    "Minimum cannot be greater than maximum.";
-                return;
-            }
+            document.getElementById("locationLabel").textContent =
+                "Location:";
+            locationInput.placeholder = "e.g. Bobst Library";
+            locationInput.type = "text";
 
-            const data = {
-                course: document.getElementById("course").value.trim(),
-                topic: document.getElementById("topic").value.trim(),
-                start_at: start.toISOString(),
-                end_at: end.toISOString(),
-                session_type: type.value,
-                min_participants: minimum,
-                max_participants: maximum
-            };
+        } catch (error) {
+            message.textContent = error.message;
+        }
+    });
+</script>
 
-            if (type.value === "virtual") {
-                data.meeting_url = locationInput.value.trim();
-            } else {
-                data.location = locationInput.value.trim();
-            }
-
-            try {
-                const tokenResponse = await fetch("/api/auth/csrf");
-
-                if (!tokenResponse.ok) {
-                    throw new Error("Could not get security token.");
-                }
-
-                const tokenData = await tokenResponse.json();
-
-                const response = await fetch("/api/sessions", {
-                    method: "POST",
-                    credentials: "same-origin",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "X-CSRFToken": tokenData.csrf_token
-                    },
-                    body: JSON.stringify(data)
-                });
-
-                const result = await response.json();
-
-                if (!response.ok) {
-                    throw new Error(
-                        result.error || "Failed to create session."
-                    );
-                }
-
-                message.textContent = "Session created successfully!";
-                form.reset();
-
-            } catch (error) {
-                message.textContent = error.message;
-            }
-        });
-    </script>
-
-</body>
-</html>
+{% endblock %}
