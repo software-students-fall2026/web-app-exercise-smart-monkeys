@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Session Details | Study Group Finder{% endblock %}
+
+{% block content %}
+<p>
+    <a href="{{ url_for('search_page') }}">Back to search</a>
+</p>
+
+<h1>Study Session Details</h1>
+
+{% if error %}
+    <p role="alert">{{ error }}</p>
+{% else %}
+    <p>All dates and times are shown in New York time.</p>
+
+    <article class="session-card">
+        <h2>{{ study_session.course }}</h2>
+
+        <dl>
+            <dt>Topic</dt>
+            <dd>{{ study_session.topic }}</dd>
+
+            <dt>Starts</dt>
+            <dd>{{ study_session.start_at | display_ny }}</dd>
+
+            <dt>Ends</dt>
+            <dd>{{ study_session.end_at | display_ny }}</dd>
+
+            <dt>Session type</dt>
+            <dd>
+                {{ study_session.session_type | replace("_", " ") | title }}
+            </dd>
+
+            {% if study_session.session_type == "virtual" %}
+                <dt>Meeting link</dt>
+                <dd>
+                    {% set meeting_url = study_session.meeting_url or "" %}
+
+                    {% if meeting_url.startswith("https://")
+                          or meeting_url.startswith("http://") %}
+                        <a href="{{ meeting_url }}"
+                           target="_blank"
+                           rel="noopener noreferrer">
+                            Open meeting
+                        </a>
+                    {% else %}
+                        Meeting link unavailable.
+                    {% endif %}
+                </dd>
+            {% else %}
+                <dt>Location</dt>
+                <dd>{{ study_session.location or "Not provided" }}</dd>
+            {% endif %}
+
+            <dt>Participants</dt>
+            <dd>
+                {{ study_session.participant_count }}
+                / {{ study_session.max_participants }}
+            </dd>
+
+            <dt>Minimum participants</dt>
+            <dd>{{ study_session.min_participants }}</dd>
+
+            <dt>Status</dt>
+            <dd>{{ study_session.display_status | title }}</dd>
+
+            <dt>Registration</dt>
+            <dd>
+                {% if not study_session.registration_open %}
+                    Closed
+                {% elif study_session.participant_count
+                        >= study_session.max_participants %}
+                    Full
+                {% else %}
+                    Open
+                {% endif %}
+            </dd>
+        </dl>
+
+        <h3>Participants</h3>
+
+        <ul>
+            {% for participant in study_session.participants %}
+                <li>
+                    {{ participant.name }}
+
+                    {% if participant._id|string
+                          == study_session.organizer_id|string %}
+                        (organizer)
+                    {% endif %}
+                </li>
+            {% else %}
+                <li>No participant names available.</li>
+            {% endfor %}
+        </ul>
+    </article>
+{% endif %}
+{% endblock %}

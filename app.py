@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, render_template, request, session
+from flask import Flask, jsonify, render_template, request, session, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
@@ -135,6 +135,180 @@ def create_app(test_config=None):
     @app.get("/create-session")
     def create_session_page():
         return render_template("create_session.html")
+
+    @app.template_filter("display_ny")
+    def display_ny(value):
+        if isinstance(value, str):
+            value = datetime.fromisoformat(
+                value.replace("Z", "+00:00")
+            )
+
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+
+        return value.astimezone(
+            ZoneInfo("America/New_York")
+        ).strftime("%b %d, %Y at %I:%M %p %Z")
+    @app.get("/search")
+    def search_page():
+        filters = {
+            name: request.args.get(name, "").strip()
+            for name in ("course", "topic", "date", "session_type")
+        }
+
+        query = {}
+        page = 1
+        limit = 20
+        error = None
+        response_status = 200
+        sessions = []
+        has_next = False
+
+        try:
+            for field in ("course", "topic"):
+                value = filters[field]
+                if len(value) > 200:
+                    raise DomainError(f"{field} search is too long.")
+                if value:
+                    query[field] = {
+                        "$regex": re.escape(value),
+                        "$options": "i",
+                    }
+
+            kind = filters["session_type"]
+            if kind:
+                if kind not in ("in_person", "virtual"):
+                    raise DomainError("Choose a valid session type.")
+                query["session_type"] = kind
+
+            if filters["date"]:
+                try:
+                    day = date.fromisoformat(filters["date"])
+                    ny_zone = ZoneInfo("America/New_York")
+
+                    start = datetime.combine(
+                        day,
+                        datetime.min.time(),
+                        ny_zone,
+                    ).astimezone(timezone.utc)
+
+                    end = datetime.combine(
+                        day + timedelta(days=1),
+                        datetime.min.time(),
+                        ny_zone,
+                    ).astimezone(timezone.utc)
+
+                except (ValueError, OverflowError) as exc:
+                    raise DomainError(
+                        "Enter a valid date in YYYY-MM-DD format."
+                    ) from exc
+
+                query["start_at"] = {"$gte": start, "$lt": end}
+
+            try:
+                page = int(request.args.get("page", "1"))
+            except ValueError as exc:
+                raise DomainError("Page must be a number.") from exc
+
+            if not 1 <= page <= 10000:
+                raise DomainError("Page must be between 1 and 10000.")
+
+            documents = list(
+                store.sessions.find(query)
+                .sort([("start_at", 1), ("_id", 1)])
+                .skip((page - 1) * limit)
+                .limit(limit + 1)
+            )
+
+            # Read one extra result to check whether another page exists.
+            has_next = len(documents) > limit
+
+            for document in documents[:limit]:
+                item = public_session(document)
+
+                for field in ("participant_ids", "meeting_url", "location"):
+                    item.pop(field, None)
+
+                sessions.append(item)
+
+        except DomainError as exc:
+            error = str(exc)
+            response_status = exc.status
+            page = 1
+
+        except PyMongoError:
+            error = "Sessions are temporarily unavailable. Please try again."
+            response_status = 503
+
+        query_args = {
+            name: value
+            for name, value in filters.items()
+            if value
+        }
+
+        previous_url = None
+        next_url = None
+
+        if not error:
+            if page > 1:
+                previous_url = url_for(
+                    "search_page", page=page - 1, **query_args
+                )
+
+            if has_next and page < 10000:
+                next_url = url_for(
+                    "search_page", page=page + 1, **query_args
+                )
+
+        return render_template(
+            "search_sessions.html",
+            filters=filters,
+            sessions=sessions,
+            error=error,
+            page=page,
+            previous_url=previous_url,
+            next_url=next_url,
+        ), response_status
+
+    @app.get("/sessions/<session_id>")
+    def session_detail_page(session_id):
+        if not current_user.is_authenticated:
+            return render_template(
+                "session_detail.html",
+                study_session=None,
+                error="Please log in to view session details.",
+            ), 401
+
+        try:
+            document = store.get_session(session_id)
+            study_session = public_session(document)
+
+            study_session["participants"] = list(
+                store.users.find(
+                    {"_id": {"$in": document["participant_ids"]}},
+                    {"name": 1},
+                )
+            )
+
+        except DomainError as exc:
+            return render_template(
+                "session_detail.html",
+                study_session=None,
+                error=str(exc),
+            ), exc.status
+
+        except PyMongoError:
+            return render_template(
+                "session_detail.html",
+                study_session=None,
+                error="Session details are temporarily unavailable. Please try again.",
+            ), 503
+
+        return render_template(
+            "session_detail.html",
+            study_session=study_session,
+            error=None,
+        )
         
 
     @app.get("/api/sessions")
