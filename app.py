@@ -132,7 +132,7 @@ def create_app(test_config=None):
     def me():
         return jsonify(user=public_user(current_user.document))
 
-    @app.get("/create-session")
+    @app.get("/sessions/new")
     def create_session_page():
         return render_template("create_session.html")
 
@@ -270,6 +270,7 @@ def create_app(test_config=None):
             next_url=next_url,
         ), response_status
 
+   
     @app.get("/sessions/<session_id>")
     def session_detail_page(session_id):
         if not current_user.is_authenticated:
