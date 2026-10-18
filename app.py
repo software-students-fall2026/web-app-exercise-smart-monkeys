@@ -162,7 +162,9 @@ def create_app(test_config=None):
                 raise DomainError("Login required.", 401)
             query["participant_ids"] = current_user.document["_id"]
         if request.args.get("available") == "true":
-            query.update(status="waiting", registration_deadline={"$gt": utcnow()})
+            # Joinable until the deadline (start_at), including already-confirmed groups.
+            query["status"] = {"$in": ["waiting", "confirmed"]}
+            query.setdefault("start_at", {})["$gt"] = utcnow()
             query["$expr"] = {"$lt": [{"$size": "$participant_ids"}, "$max_participants"]}
         try:
             page, limit = int(request.args.get("page", 1)), int(request.args.get("limit", 20))

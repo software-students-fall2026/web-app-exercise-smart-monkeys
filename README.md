@@ -178,24 +178,29 @@ const response = await fetch('/api/sessions', {
 
 - `users`: name, normalized unique email, password hash, creation time.
 - `sessions`: course/topic, start/end, type/location/link, organizer ID,
-  participant ID array, participant limits, deadline, status, revision and timestamps.
+  participant ID array, participant limits, status, revision and timestamps.
 - The organizer is automatically the first participant and cannot leave their
   own session; they can delete it. Membership is stored only on the session.
-- Defaults are minimum 10, maximum 40. Overrides must satisfy
-  `2 <= min <= max <= 40`, with bounds/defaults configurable in the environment.
-- The deadline is `min(created_at + registration_window, start_at)`. The default
-  window is 1,440 minutes. Editing can shorten but never extend the deadline.
+- Defaults are minimum 2, maximum 8. Explicit values in the create request take
+  priority over the defaults. Overrides must satisfy `2 <= min <= max <= 40`,
+  with bounds/defaults configurable in the environment.
+- The registration deadline is the session's required `start_at`. Rescheduling
+  moves the deadline together with the start time.
+- Status is a state machine persisted on the document. Before the deadline,
+  join/leave atomically switch between `waiting` (below minimum) and `confirmed`
+  (minimum reached). After the deadline, underfilled sessions become `closed`
+  and are kept, not deleted; filled sessions stay `confirmed`.
 - Join uses one atomic MongoDB update checking the deadline, duplicates and
-  capacity. An edit cannot lower capacity below current membership. Concurrent
-  edits or membership changes can cause a 409; refresh before retrying an edit.
-- Cleanup runs every 60 seconds by default. After the deadline, it deletes
-  underfilled sessions or marks sufficiently filled sessions `confirmed`.
-  `waiting` means registration has not yet been finalized, regardless of count.
-- Between the deadline and cleanup, membership is frozen. Confirmed participants
-  may leave until the session ends, without triggering automatic deletion.
-  Joining and editing remain closed after the registration deadline.
-- `display_status` derives `full`, `completed` (after end time), or
-  `pending_cleanup`; persisted status is `waiting` or `confirmed`. Cancellation
+  capacity, and recomputing status in the same write. An edit cannot lower
+  capacity below current membership. Concurrent edits or membership changes can
+  cause a 409; refresh before retrying an edit.
+- The cleanup process polls every 60 seconds by default and settles sessions
+  still `waiting` after the deadline: `closed` below minimum, `confirmed`
+  otherwise. Confirmed participants may leave until the session ends; dropping
+  below minimum after the deadline also closes the session.
+- `display_status` derives `full`, `completed` (after end time), or `closed`
+  (including waiting sessions past the deadline pending cleanup); persisted
+  status is `waiting`, `confirmed`, or `closed`. Cancellation by the organizer
   is a physical deletion, so there is no retained `cancelled` record.
 - One independent cleanup process is sufficient; no lease-lock collection is
   needed. Cleanup uses conditional database writes and is safe to rerun.

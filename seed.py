@@ -41,7 +41,6 @@ def seed(store):
                 "organizer_id": organizer, "participant_ids": [organizer],
                 "min_participants": Config.DEFAULT_MIN_PARTICIPANTS,
                 "max_participants": Config.DEFAULT_MAX_PARTICIPANTS,
-                "registration_deadline": min(start, now + timedelta(minutes=Config.REGISTRATION_WINDOW_MINUTES)),
                 "status": "waiting", "revision": 1, "created_at": now, "updated_at": now,
             }},
             upsert=True,
