@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>{% block title %}Study Group Finder{% endblock %}</title>
+
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+
+<body>
+
+    <!-- Navigation -->
+    <header class="site-header">
+        <nav class="navbar">
+            <a href="/" class="logo">Study Group Finder</a>
+
+            <button class="menu-toggle"
+                    type="button"
+                    aria-label="Toggle navigation"
+                    aria-expanded="false"
+                    aria-controls="nav-links">
+                ☰
+            </button>
+
+            <div class="nav-links" id="nav-links">
+                <a href="/">Browse Sessions</a>
+                <a href="/sessions/new">Create Session</a>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container">
+        {% block content %}
+        {% endblock %}
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        <p>&copy; 2026 Study Group Finder</p>
+    </footer>
+
+    <script>
+        const menuToggle = document.querySelector(".menu-toggle");
+        const navLinks = document.querySelector(".nav-links");
+
+        menuToggle.addEventListener("click", () => {
+            const isOpen = navLinks.classList.toggle("open");
+            menuToggle.setAttribute("aria-expanded", String(isOpen));
+        });
+    </script>
+
+</body>
+</html>
