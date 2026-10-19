@@ -157,10 +157,12 @@ def create_app(test_config=None):
         }
 
         query = {
+            "status": {"$in": ["waiting", "confirmed"]},
+            "start_at": {"$gt": utcnow()},
             "$expr": {
                 "$lt": [
                     {"$size": "$participant_ids"},
-                    "$max_participants",
+                    "$max_participants"
                 ]
             }
         }
@@ -210,7 +212,7 @@ def create_app(test_config=None):
                         "Enter a valid date in YYYY-MM-DD format."
                     ) from exc
 
-                query["start_at"] = {"$gte": start, "$lt": end}
+                query["start_at"].update({"$gte": start, "$lt": end})
 
             try:
                 page = int(request.args.get("page", "1"))
