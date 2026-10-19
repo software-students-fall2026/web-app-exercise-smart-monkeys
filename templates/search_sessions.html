@@ -3,12 +3,14 @@
 {% block title %}Search Sessions | Study Group Finder{% endblock %}
 
 {% block content %}
-<h1>Search Study Sessions</h1>
+<h1 class="page-title">Search Study Sessions</h1>
+<p>Find study groups by course, topic, date, and session type.</p>
 
-<form action="{{ url_for('search_page') }}" method="get">
+<form class="search-filters"
+      action="{{ url_for('search_page') }}" method="get">
     <p>
         <label for="course">Course</label>
-        <input id="course"
+        <input class="form-control" id="course"
                name="course"
                type="text"
                maxlength="200"
@@ -18,7 +20,7 @@
 
     <p>
         <label for="topic">Topic</label>
-        <input id="topic"
+        <input class="form-control" id="topic"
                name="topic"
                type="text"
                maxlength="200"
@@ -28,7 +30,7 @@
 
     <p>
         <label for="date">Date (New York)</label>
-        <input id="date"
+        <input class="form-control" id="date"
                name="date"
                type="date"
                value="{{ filters.date }}">
@@ -36,7 +38,7 @@
 
     <p>
         <label for="session_type">Session type</label>
-        <select id="session_type" name="session_type">
+        <select class="form-control" id="session_type" name="session_type">
             <option value="">All types</option>
 
             <option value="in_person"
@@ -51,8 +53,12 @@
         </select>
     </p>
 
-    <button type="submit">Search</button>
-    <a href="{{ url_for('search_page') }}">Clear filters</a>
+        <div class="search-actions">
+        <button class="btn" type="submit">Search</button>
+        <a class="search-clear" href="{{ url_for('search_page') }}">
+            Clear filters
+        </a>
+    </div>
 </form>
 
 <p>All dates and times are shown in New York time.</p>
@@ -67,7 +73,7 @@
     <section class="session-grid" aria-label="Search results">
         {% for session in sessions %}
             <article class="session-card">
-                <h2>{{ session.course }}</h2>
+                <h2 class="session-course">{{ session.course }}</h2>
 
                 <p>
                     <strong>Topic:</strong>
