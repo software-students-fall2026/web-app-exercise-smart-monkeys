@@ -46,6 +46,11 @@
             {{ session.display_status | title }}
         </p>
 
+        <a class="session-details-link"
+            href="{{ url_for('session_detail_page', session_id=session._id|string) }}">
+            View details
+        </a>
+
     </article>
 
     {% else %}
