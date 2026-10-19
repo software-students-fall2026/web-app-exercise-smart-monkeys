@@ -156,7 +156,14 @@ def create_app(test_config=None):
             for name in ("course", "topic", "date", "session_type")
         }
 
-        query = {}
+        query = {
+            "$expr": {
+                "$lt": [
+                    {"$size": "$participant_ids"},
+                    "$max_participants",
+                ]
+            }
+        }
         page = 1
         limit = 20
         error = None
