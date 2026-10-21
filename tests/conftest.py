@@ -14,8 +14,14 @@ def app():
     application = create_app({
         "TESTING": True,
         "SECRET_KEY": "test-key-only-not-for-real-accounts-123456789",
-        "MONGO_URI": os.getenv("TEST_MONGO_URI", "mongodb://localhost:27017/"),
+        "MONGO_URI": os.getenv(
+            "TEST_MONGO_URI", "mongodb://localhost:27017/"
+        ),
         "MONGO_DB_NAME": name,
+        "DEFAULT_MIN_PARTICIPANTS": 2,
+        "DEFAULT_MAX_PARTICIPANTS": 8,
+        "MIN_ALLOWED_PARTICIPANTS": 2,
+        "MAX_ALLOWED_PARTICIPANTS": 40,
     })
     yield application
     store = application.extensions["store"]
