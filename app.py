@@ -5,13 +5,13 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, render_template, request, session, url_for
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
 from pymongo.errors import PyMongoError
 from werkzeug.exceptions import HTTPException
-from werkzeug.security import check_password_hash
+
 
 from config import Config
 from db import DomainError, Store, object_id, public_session, public_user, utcnow
@@ -110,12 +110,10 @@ def create_app(test_config=None):
     @app.post("/api/auth/login")
     def login():
         data = json_body()
-        email, password = data.get("email"), data.get("password")
-        if not isinstance(email, str) or not isinstance(password, str) or len(password) > 128:
-            raise DomainError("Supply an email and password.")
-        document = store.users.find_one({"email": email.strip().lower()})
-        if document is None or not check_password_hash(document["password_hash"], password):
-            raise DomainError("Invalid email or password.", 401)
+        document = store.authenticate_user(
+            data.get("email"),
+            data.get("password"),
+        )
         session.clear()
         login_user(User(document))
         return jsonify(user=public_user(document))
@@ -132,10 +130,125 @@ def create_app(test_config=None):
     def me():
         return jsonify(user=public_user(current_user.document))
 
+    def safe_login_destination(target):
+        """Allow only known local pages after login."""
+        if target in ("/", "/search", "/sessions/new"):
+            return target
+
+        if isinstance(target, str) and re.fullmatch(
+            r"/sessions/[0-9a-fA-F]{24}", target
+        ):
+            return target
+
+        return url_for("home_page")
+
+    @app.route("/signup", methods=["GET", "POST"])
+    def signup_page():
+        if current_user.is_authenticated:
+            return redirect(url_for("home_page"))
+
+        values = {"name": "", "email": ""}
+        error = None
+        status = 200
+
+        if request.method == "POST":
+            values = {
+                "name": request.form.get("name", "").strip(),
+                "email": request.form.get("email", "").strip(),
+            }
+            password = request.form.get("password", "")
+            confirmation = request.form.get("confirm_password", "")
+
+            try:
+                if password != confirmation:
+                    raise DomainError("Passwords do not match.")
+
+                document = store.create_user({
+                    "name": values["name"],
+                    "email": values["email"],
+                    "password": password,
+                })
+
+            except DomainError as exc:
+                error = str(exc)
+                status = exc.status
+
+            except PyMongoError:
+                error = (
+                    "We could not complete registration. "
+                    "If your account was created, try logging in."
+                )
+                status = 503
+
+            else:
+                session.clear()
+                login_user(User(document))
+                return redirect(url_for("home_page"), code=303)
+
+        return render_template(
+            "signup.html",
+            values=values,
+            error=error,
+        ), status
+
+    @app.route("/login", methods=["GET", "POST"])
+    def login_page():
+        target = (
+            request.form.get("next", "")
+            if request.method == "POST"
+            else request.args.get("next", "")
+        )
+        next_url = safe_login_destination(target)
+
+        if current_user.is_authenticated:
+            return redirect(next_url)
+
+        email = ""
+        error = None
+        status = 200
+
+        if request.method == "POST":
+            email = request.form.get("email", "").strip()
+            password = request.form.get("password", "")
+
+            try:
+                document = store.authenticate_user(email, password)
+
+            except DomainError as exc:
+                error = str(exc)
+                status = exc.status
+
+            except PyMongoError:
+                error = "Login is temporarily unavailable. Please try again."
+                status = 503
+
+            else:
+                session.clear()
+                login_user(User(document))
+                return redirect(next_url, code=303)
+
+        return render_template(
+            "login.html",
+            email=email,
+            next_url=next_url,
+            error=error,
+        ), status
+
+    @app.post("/logout")
+    def logout_page():
+        logout_user()
+        session.clear()
+        return redirect(url_for("home_page"), code=303)
+
+
     @app.get("/sessions/new")
     def create_session_page():
-        return render_template("create_session.html")
+        if not current_user.is_authenticated:
+            return redirect(
+                url_for("login_page", next=request.path)
+            )
 
+        return render_template("create_session.html")
     @app.template_filter("display_ny")
     def display_ny(value):
         if isinstance(value, str):
@@ -157,12 +270,14 @@ def create_app(test_config=None):
         }
 
         query = {
+            "status": {"$in": ["waiting", "confirmed"]},
+            "start_at": {"$gt": utcnow()},
             "$expr": {
                 "$lt": [
                     {"$size": "$participant_ids"},
                     "$max_participants",
                 ]
-            }
+            },
         }
         page = 1
         limit = 20
@@ -210,8 +325,7 @@ def create_app(test_config=None):
                         "Enter a valid date in YYYY-MM-DD format."
                     ) from exc
 
-                query["start_at"] = {"$gte": start, "$lt": end}
-
+                query["start_at"].update({"$gte": start, "$lt": end})
             try:
                 page = int(request.args.get("page", "1"))
             except ValueError as exc:
@@ -281,11 +395,9 @@ def create_app(test_config=None):
     @app.get("/sessions/<session_id>")
     def session_detail_page(session_id):
         if not current_user.is_authenticated:
-            return render_template(
-                "session_detail.html",
-                study_session=None,
-                error="Please log in to view session details.",
-            ), 401
+            return redirect(
+                url_for("login_page", next=request.path)
+            )
 
         try:
             document = store.get_session(session_id)
