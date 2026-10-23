@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, render_template, request, session, url_for
+from flask import Flask, jsonify, render_template, request, session, url_for, redirect
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
@@ -452,8 +452,131 @@ def create_app(test_config=None):
         document = store.leave_session(session_id, current_user.document["_id"])
         return jsonify(session=public_session(document))
 
-    return app
+    @app.route("/sessions/<session_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def edit_session_page(session_id):
+        document = store.get_session(session_id)
+        user_id = current_user.document["_id"]
 
+        # Only the organizer can access this page.
+        if document["organizer_id"] != user_id:
+            return "Only the organizer can edit this session.", 403
+
+        # Editing is only possible before the session starts.
+        if (document["status"] not in ("waiting", "confirmed") or document["start_at"] <= utcnow()):
+            return "Registration closed. This session cannot be edited.", 409
+
+        ny_zone = ZoneInfo("America/New_York")
+
+        def to_form_time(value):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(ny_zone).strftime("%Y-%m-%dT%H:%M")
+
+        def to_utc_time(value):
+            try:
+                local_time = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+            except ValueError as exc:
+                raise DomainError("Enter a valid date and time.") from exc
+
+            aware_time = local_time.replace(tzinfo=ny_zone, fold=0)
+            utc_time = aware_time.astimezone(timezone.utc)
+
+            # Reject nonexistent or ambiguous daylight-saving times.
+            if (
+                utc_time.astimezone(ny_zone).replace(tzinfo=None)
+                != local_time
+            ):
+                raise DomainError("This New York time does not exist.")
+
+            if (
+                local_time.replace(tzinfo=ny_zone, fold=1).utcoffset()
+                != aware_time.utcoffset()
+            ):
+                raise DomainError(
+                    "This New York time is ambiguous. Choose another time."
+                )
+
+            return utc_time.isoformat()
+
+        # Prefill the form with existing session information.
+        values = {
+            "course": document["course"],
+            "topic": document["topic"],
+            "start_at": to_form_time(document["start_at"]),
+            "end_at": to_form_time(document["end_at"]),
+            "session_type": document["session_type"],
+            "place": (
+                document.get("meeting_url") or ""
+                if document["session_type"] == "virtual"
+                else document.get("location") or ""
+            ),
+            "min_participants": document["min_participants"],
+            "max_participants": document["max_participants"],
+        }
+
+        error = None
+        status = 200
+
+        if request.method == "POST":
+            # Preserve user input if validation fails.
+            values = {
+                key: request.form.get(key, "").strip()
+                for key in values
+            }
+
+            try:
+                try:
+                    minimum = int(values["min_participants"])
+                    maximum = int(values["max_participants"])
+                except ValueError as exc:
+                    raise DomainError(
+                        "Participant limits must be whole numbers."
+                    ) from exc
+
+                changes = {
+                    "course": values["course"],
+                    "topic": values["topic"],
+                    "start_at": to_utc_time(values["start_at"]),
+                    "end_at": to_utc_time(values["end_at"]),
+                    "session_type": values["session_type"],
+                    "min_participants": minimum,
+                    "max_participants": maximum,
+                }
+
+                if values["session_type"] == "virtual":
+                    changes["meeting_url"] = values["place"]
+                else:
+                    changes["location"] = values["place"]
+
+                # Reusing Abel's existing backend validation and update.
+                store.update_session(
+                    session_id,
+                    user_id,
+                    changes,
+                    app.config
+                )
+
+            except DomainError as exc:
+                error = str(exc)
+                status = exc.status
+
+            else:
+                return redirect(
+                    url_for("session_detail_page", session_id=session_id),
+                    code=303
+                )
+
+        return render_template(
+            "edit_session.html",
+            session_id=session_id,
+            values=values,
+            error=error,
+            min_allowed=app.config["MIN_ALLOWED_PARTICIPANTS"],
+            max_allowed=app.config["MAX_ALLOWED_PARTICIPANTS"],
+        ), status
+
+    return app
 
 if __name__ == "__main__":
     create_app().run(host="127.0.0.1", port=5000)
