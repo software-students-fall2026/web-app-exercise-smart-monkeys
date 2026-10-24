@@ -9,6 +9,12 @@
 
 <h1>Study Session Details</h1>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+        <p role="alert">{{ message }}</p>
+    {% endfor %}
+{% endwith %}
+
 {% if error %}
     <p role="alert">{{ error }}</p>
 {% else %}
@@ -95,5 +101,21 @@
             {% endfor %}
         </ul>
     </article>
+
+    {% if current_user.is_authenticated
+          and current_user.id == study_session.organizer_id|string
+          and study_session.registration_open %}
+
+        <form method="POST"
+              action="{{ url_for('cancel_session_page', session_id=study_session._id) }}"
+              onsubmit="return confirm('Are you sure you want to cancel this session?');">
+
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <button type="submit">Cancel Session</button>
+        </form>
+
+    {% endif %}
+
 {% endif %}
 {% endblock %}

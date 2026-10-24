@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
@@ -440,6 +440,11 @@ def create_app(test_config=None):
         store.delete_session(session_id, current_user.document["_id"])
         return "", 204
 
+    @app.post("/api/sessions/<session_id>/cancel")
+    @login_required
+    def cancel_session(session_id):
+        document = store.cancel_session(session_id, current_user.document["_id"])
+        return jsonify(session=public_session(document))
     @app.post("/api/sessions/<session_id>/join")
     @login_required
     def join_session(session_id):
@@ -452,8 +457,18 @@ def create_app(test_config=None):
         document = store.leave_session(session_id, current_user.document["_id"])
         return jsonify(session=public_session(document))
 
-    return app
 
+    @app.post("/sessions/<session_id>/cancel")
+    @login_required
+    def cancel_session_page(session_id):
+        try:
+            store.cancel_session(session_id, current_user.document["_id"])
+            flash("Session cancelled successfully.", "success")
+        except DomainError as exc:
+            flash(str(exc), "error")
+
+        return redirect(url_for("session_detail_page", session_id=session_id))
+    return app
 
 if __name__ == "__main__":
     create_app().run(host="127.0.0.1", port=5000)
