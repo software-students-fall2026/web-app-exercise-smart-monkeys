@@ -7,8 +7,11 @@
     <a href="{{ url_for('search_page') }}">Back to search</a>
 </p>
 
-<h1>Study Session Details</h1>
-
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+        <p role="alert">{{ message }}</p>
+    {% endfor %}
+{% endwith %}
 {% if error %}
     <p role="alert">{{ error }}</p>
 {% else %}
