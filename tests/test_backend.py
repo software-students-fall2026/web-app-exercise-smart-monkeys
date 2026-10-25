@@ -223,3 +223,24 @@ def test_virtual_session_and_invalid_search_inputs(app):
     assert public.get(f"/api/sessions/{document['_id']}").status_code == 401
     for query in ("date=bad", "date=9999-12-31", "page=0", "limit=101", "limit=no", "mine=yes"):
         assert public.get("/api/sessions?" + query).status_code == 400
+
+def test_delete_requires_confirmation(app):
+    owner, _ = register(app)
+    document = create(owner)
+    session_id = document["_id"]
+    url = f"/sessions/{session_id}/delete"
+
+    # Without confirmation, deletion must be rejected.
+    response = write(owner, "POST", url)
+    assert response.status_code == 302
+    assert owner.get(f"/api/sessions/{session_id}").status_code == 200
+
+    # With confirmation, deletion succeeds.
+    token = owner.get("/api/auth/csrf").json["csrf_token"]
+    response = owner.post(
+        url,
+        data={"confirm_delete": "yes"},
+        headers={"X-CSRFToken": token},
+    )
+    assert response.status_code == 302
+    assert owner.get(f"/api/sessions/{session_id}").status_code == 404

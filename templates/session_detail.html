@@ -111,8 +111,10 @@
             <p>Warning: Deleting this session is permanent and cannot be undone.</p>
 
             <label>
-                <input type="checkbox" required>
-                I understand this session will be permanently deleted.
+                <input type="checkbox"
+                    name="confirm_delete"
+                    value="yes"
+                    required>                I understand this session will be permanently deleted.
             </label>
 
             <button type="submit">Delete Session Permanently</button>

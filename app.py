@@ -456,6 +456,11 @@ def create_app(test_config=None):
     @app.post("/sessions/<session_id>/delete")
     @login_required
     def delete_session_page(session_id):
+        if request.form.get("confirm_delete") != "yes":
+            flash("Please confirm permanent deletion.", "error")
+            return redirect(
+                url_for("session_detail_page", session_id=session_id)
+            )
         try:
             store.delete_session(session_id, current_user.document["_id"])
             flash("Session permanently deleted.", "success")
