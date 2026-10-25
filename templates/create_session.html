@@ -59,14 +59,16 @@
             <input type="number" id="maximum" class="form-control"
                    value="8" min="2" max="40" required>
         </div>
-<section id="similarSessions" aria-live="polite" hidden>
-    <h3>Similar Study Sessions</h3>
-    <p>
-        These sessions may be similar to yours.
-        Consider joining one instead.
-    </p>
-    <ul id="similarSessionsList"></ul>
-</section>
+
+        <section id="similarSessions" aria-live="polite" hidden>
+            <h3>Similar Study Sessions</h3>
+            <p>
+                These sessions may be similar to yours.
+                Consider joining one instead.
+            </p>
+            <ul id="similarSessionsList"></ul>
+        </section>
+
         <button type="submit" class="btn">Create Session</button>
     </form>
 
@@ -78,94 +80,87 @@
     const type = document.getElementById("type");
     const locationInput = document.getElementById("location");
     const message = document.getElementById("message");
-const courseInput = document.getElementById("course");
-const startInput = document.getElementById("start");
-const similarSection = document.getElementById("similarSessions");
-const similarList = document.getElementById("similarSessionsList");
-let suggestionRequestId = 0;
+    const courseInput = document.getElementById("course");
+    const startInput = document.getElementById("start");
+    const similarSection = document.getElementById("similarSessions");
+    const similarList = document.getElementById("similarSessionsList");
+    let suggestionRequestId = 0;
 
-async function checkSimilarSessions() {
-const requestId = ++suggestionRequestId;
-    const course = courseInput.value.trim();
-    const startValue = startInput.value;
-
-    similarSection.hidden = true;
-    similarList.replaceChildren();
-
-    if (!course || !startValue) {
-        return;
+    function normalizeCourse(text) {
+        return text.toLowerCase().replace(/[^a-z0-9]/g, "");
     }
 
-    const selectedTime = new Date(startValue);
+    async function checkSimilarSessions() {
+        const requestId = ++suggestionRequestId;
+        const course = courseInput.value.trim();
+        const startValue = startInput.value;
 
-    if (Number.isNaN(selectedTime.getTime())) {
-        return;
-    }
+        similarSection.hidden = true;
+        similarList.replaceChildren();
 
-    try {
+        if (!course || !startValue) {
+            return;
+        }
+
+        const selectedTime = new Date(startValue);
+
+        if (Number.isNaN(selectedTime.getTime())) {
+            return;
+        }
+
         const oneHour = 60 * 60 * 1000;
+        const params = new URLSearchParams({
+            available: "true",
+            start_from: new Date(selectedTime.getTime() - oneHour).toISOString(),
+            start_to: new Date(selectedTime.getTime() + oneHour).toISOString(),
+            limit: "100"
+        });
 
-const startFrom = new Date(
-    selectedTime.getTime() - oneHour
-);
+        try {
+            const response = await fetch(`/api/sessions?${params}`);
 
-const startTo = new Date(
-    selectedTime.getTime() + oneHour
-);
+            if (!response.ok) {
+                throw new Error("Unable to check similar sessions.");
+            }
 
-const params = new URLSearchParams({
-    course: course,
-    available: "true",
-    start_from: startFrom.toISOString(),
-    start_to: startTo.toISOString(),
-    limit: "100"
-});
+            const data = await response.json();
 
-        const response = await fetch(`/api/sessions?${params}`);
+            if (requestId !== suggestionRequestId) {
+                return;
+            }
 
-        if (!response.ok) {
-            throw new Error("Unable to check similar sessions.");
+            const wanted = normalizeCourse(course);
+
+            const similar = data.sessions.filter(session => {
+                const existing = normalizeCourse(session.course);
+                const sameCourse = existing.includes(wanted) || wanted.includes(existing);
+                const difference = Math.abs(
+                    new Date(session.start_at).getTime() - selectedTime.getTime()
+                );
+                return sameCourse && difference <= oneHour;
+            });
+
+            for (const session of similar) {
+                const item = document.createElement("li");
+                const link = document.createElement("a");
+                link.href = `/sessions/${encodeURIComponent(session._id)}`;
+                link.textContent =
+                    `${session.course} — ${session.topic} (${new Date(
+                        session.start_at
+                    ).toLocaleString()})`;
+                item.appendChild(link);
+                similarList.appendChild(item);
+            }
+
+            similarSection.hidden = similar.length === 0;
+
+        } catch (error) {
+            console.error("Similar session check failed:", error);
         }
-
-        const data = await response.json();
-        if (requestId !== suggestionRequestId) {
-    return;
-}
-
-
-const similar = data.sessions.filter(session => {
-    const sameCourse =
-        session.course.trim().toLowerCase() ===
-        course.toLowerCase();
-
-    const sessionTime = new Date(session.start_at);
-    const difference = Math.abs(
-        sessionTime.getTime() - selectedTime.getTime()
-    );
-
-    return sameCourse && difference <= 60 * 60 * 1000;
-});
-
-        for (const session of similar) {
-            const item = document.createElement("li");
-            const link = document.createElement("a");
-
-            link.href = `/sessions/${encodeURIComponent(session._id)}`;
-            link.textContent =
-                `${session.course} — ${session.topic} (${new Date(
-                    session.start_at
-                ).toLocaleString()})`;
-
-            item.appendChild(link);
-            similarList.appendChild(item);
-        }
-
-        similarSection.hidden = similar.length === 0;
-
-    } catch (error) {
-        console.error("Similar session check failed:", error);
     }
-}
+
+    courseInput.addEventListener("change", checkSimilarSessions);
+    startInput.addEventListener("change", checkSimilarSessions);
 
 courseInput.addEventListener("change", checkSimilarSessions);
 startInput.addEventListener("change", checkSimilarSessions);

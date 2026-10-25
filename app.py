@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 
 
 from config import Config
-from db import DomainError, Store, object_id, public_session, public_user, utcnow
+from db import DomainError, Store, object_id, parse_time, public_session, public_user, utcnow
 
 class MongoJSONProvider(DefaultJSONProvider):
     @staticmethod
@@ -70,7 +70,10 @@ def create_app(test_config=None):
 
     @login_manager.unauthorized_handler
     def unauthorized():
-        return jsonify(error="Login required."), 401
+        if request.path.startswith("/api/"):
+            return jsonify(error="Login required."), 401
+
+        return redirect(url_for("login_page", next=request.path))
 
     @app.errorhandler(DomainError)
     def domain_error(error):
@@ -132,7 +135,7 @@ def create_app(test_config=None):
 
     def safe_login_destination(target):
         """Allow only known local pages after login."""
-        if target in ("/", "/search", "/sessions/new"):
+        if target in ("/", "/search", "/sessions/new", "/my-sessions"):
             return target
 
         if isinstance(target, str) and re.fullmatch(
@@ -454,34 +457,12 @@ def create_app(test_config=None):
             query["start_at"] = {"$gte": start, "$lt": end}
         if "start_from" in request.args or "start_to" in request.args:
             if "date" in request.args:
-                raise DomainError(
-                    "Use either date or a start time range, not both."
-                )
-
-            try:
-                start_from = datetime.fromisoformat(
-                    request.args["start_from"].replace("Z", "+00:00")
-                )
-                start_to = datetime.fromisoformat(
-                    request.args["start_to"].replace("Z", "+00:00")
-                )
-
-                if start_from.utcoffset() is None or start_to.utcoffset() is None:
-                    raise ValueError("Timezone required")
-
-                if start_from >= start_to:
-                    raise ValueError("Invalid time range")
-
-            except (KeyError, ValueError, OverflowError) as exc:
-                raise DomainError(
-                    "Provide valid start_from and start_to timestamps."
-                ) from exc
-
-            query.setdefault("start_at", {}).update({
-                "$gte": start_from.astimezone(timezone.utc),
-                "$lt": start_to.astimezone(timezone.utc)
-            })
-
+                raise DomainError("Use either date or start_from/start_to, not both.")
+            start_from = parse_time(request.args.get("start_from"))
+            start_to = parse_time(request.args.get("start_to"))
+            if start_to <= start_from:
+                raise DomainError("start_to must be after start_from.")
+            query["start_at"] = {"$gte": start_from, "$lt": start_to}
         for flag in ("mine", "available"):
             if flag in request.args and request.args[flag] not in ("true", "false"):
                 raise DomainError(f"{flag} must be true or false.")
@@ -553,6 +534,30 @@ def create_app(test_config=None):
 
         return render_template("index.html", sessions=sessions)
 
+    @app.get("/my-sessions")
+    @login_required
+    def my_sessions_page():
+        # Identify the currently logged-in student.
+        user_id = current_user.document["_id"]
+
+        # Find sessions created OR joined by this student.
+        query = {"$or": [{"organizer_id": user_id},{"participant_ids": user_id}]}
+
+        documents = store.sessions.find(query).sort([("start_at", -1), ("_id", -1)])
+
+        created_sessions = []
+        joined_sessions = []
+
+        for document in documents:
+            session_data = public_session(document)
+
+            if document["organizer_id"] == user_id:
+                created_sessions.append(session_data)
+            else:
+                joined_sessions.append(session_data)
+
+        return render_template("my_sessions.html", created_sessions=created_sessions, joined_sessions=joined_sessions)
+
     @app.post("/api/sessions")
     @login_required
     def create_session():
@@ -597,8 +602,8 @@ def create_app(test_config=None):
     def leave_session(session_id):
         document = store.leave_session(session_id, current_user.document["_id"])
         return jsonify(session=public_session(document))
+
     # Join a study session using an HTML form
-    
     @app.post("/sessions/<session_id>/join")
     @login_required
     def join_session_page(session_id):
@@ -607,6 +612,130 @@ def create_app(test_config=None):
         except DomainError as exc:
             flash(str(exc), "error")
         return redirect(url_for("session_detail_page", session_id=session_id))
+
+    @app.route("/sessions/<session_id>/edit", methods=["GET", "POST"])
+    @login_required
+    def edit_session_page(session_id):
+        document = store.get_session(session_id)
+        user_id = current_user.document["_id"]
+
+        # Only the organizer can access this page.
+        if document["organizer_id"] != user_id:
+            return "Only the organizer can edit this session.", 403
+
+        # Editing is only possible before the session starts.
+        if (document["status"] not in ("waiting", "confirmed") or document["start_at"] <= utcnow()):
+            return "Registration closed. This session cannot be edited.", 409
+
+        ny_zone = ZoneInfo("America/New_York")
+
+        def to_form_time(value):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(ny_zone).strftime("%Y-%m-%dT%H:%M")
+
+        def to_utc_time(value):
+            try:
+                local_time = datetime.strptime(value, "%Y-%m-%dT%H:%M")
+            except ValueError as exc:
+                raise DomainError("Enter a valid date and time.") from exc
+
+            aware_time = local_time.replace(tzinfo=ny_zone, fold=0)
+            utc_time = aware_time.astimezone(timezone.utc)
+
+            # Reject nonexistent or ambiguous daylight-saving times.
+            if (
+                utc_time.astimezone(ny_zone).replace(tzinfo=None)
+                != local_time
+            ):
+                raise DomainError("This New York time does not exist.")
+
+            if (
+                local_time.replace(tzinfo=ny_zone, fold=1).utcoffset()
+                != aware_time.utcoffset()
+            ):
+                raise DomainError(
+                    "This New York time is ambiguous. Choose another time."
+                )
+
+            return utc_time.isoformat()
+
+        # Prefill the form with existing session information.
+        values = {
+            "course": document["course"],
+            "topic": document["topic"],
+            "start_at": to_form_time(document["start_at"]),
+            "end_at": to_form_time(document["end_at"]),
+            "session_type": document["session_type"],
+            "place": (
+                document.get("meeting_url") or ""
+                if document["session_type"] == "virtual"
+                else document.get("location") or ""
+            ),
+            "min_participants": document["min_participants"],
+            "max_participants": document["max_participants"],
+        }
+
+        error = None
+        status = 200
+
+        if request.method == "POST":
+            # Preserve user input if validation fails.
+            values = {
+                key: request.form.get(key, "").strip()
+                for key in values
+            }
+
+            try:
+                try:
+                    minimum = int(values["min_participants"])
+                    maximum = int(values["max_participants"])
+                except ValueError as exc:
+                    raise DomainError(
+                        "Participant limits must be whole numbers."
+                    ) from exc
+
+                changes = {
+                    "course": values["course"],
+                    "topic": values["topic"],
+                    "start_at": to_utc_time(values["start_at"]),
+                    "end_at": to_utc_time(values["end_at"]),
+                    "session_type": values["session_type"],
+                    "min_participants": minimum,
+                    "max_participants": maximum,
+                }
+
+                if values["session_type"] == "virtual":
+                    changes["meeting_url"] = values["place"]
+                else:
+                    changes["location"] = values["place"]
+
+                # Reusing Abel's existing backend validation and update.
+                store.update_session(
+                    session_id,
+                    user_id,
+                    changes,
+                    app.config
+                )
+
+            except DomainError as exc:
+                error = str(exc)
+                status = exc.status
+
+            else:
+                return redirect(
+                    url_for("session_detail_page", session_id=session_id),
+                    code=303
+                )
+
+        return render_template(
+            "edit_session.html",
+            session_id=session_id,
+            values=values,
+            error=error,
+            min_allowed=app.config["MIN_ALLOWED_PARTICIPANTS"],
+            max_allowed=app.config["MAX_ALLOWED_PARTICIPANTS"],
+        ), status
 
 
     @app.post("/sessions/<session_id>/delete")
@@ -624,7 +753,7 @@ def create_app(test_config=None):
         except DomainError as exc:
             flash(str(exc), "error")
             return redirect(url_for("session_detail_page", session_id=session_id))
-      
+
     # Leave a study session using an HTML form
     @app.post("/sessions/<session_id>/leave")
     @login_required
@@ -646,7 +775,7 @@ def create_app(test_config=None):
             flash(str(exc), "error")
 
         return redirect(url_for("session_detail_page", session_id=session_id))
-      
+
     return app
 
 if __name__ == "__main__":

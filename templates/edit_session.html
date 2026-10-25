@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Session | Study Group Finder{% endblock %}
+
+{% block content %}
+
+<section class="auth-page">
+    <div class="auth-card auth-card--signup">
+
+        <header class="auth-heading">
+            <h1>Edit Study Session</h1>
+            <p>Update the details of your study session.</p>
+        </header>
+
+        {% if error %}
+        <div class="auth-error" role="alert">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="POST"
+              action="{{ url_for('edit_session_page',
+                                 session_id=session_id) }}">
+
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <div class="form-group">
+                <label for="course">Course</label>
+                <input class="form-control"
+                       type="text"
+                       id="course"
+                       name="course"
+                       value="{{ values.course }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="topic">Topic</label>
+                <input class="form-control"
+                       type="text"
+                       id="topic"
+                       name="topic"
+                       value="{{ values.topic }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="start_at">
+                    Start Time (New York)
+                </label>
+                <input class="form-control"
+                       type="datetime-local"
+                       id="start_at"
+                       name="start_at"
+                       value="{{ values.start_at }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="end_at">
+                    End Time (New York)
+                </label>
+                <input class="form-control"
+                       type="datetime-local"
+                       id="end_at"
+                       name="end_at"
+                       value="{{ values.end_at }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="session_type">Session Type</label>
+
+                <select class="form-control"
+                        id="session_type"
+                        name="session_type"
+                        required>
+
+                    <option value="in_person"
+                        {% if values.session_type == "in_person" %}
+                        selected
+                        {% endif %}>
+                        In Person
+                    </option>
+
+                    <option value="virtual"
+                        {% if values.session_type == "virtual" %}
+                        selected
+                        {% endif %}>
+                        Virtual
+                    </option>
+
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="place">
+                    Location or Meeting URL
+                </label>
+                <input class="form-control"
+                       type="text"
+                       id="place"
+                       name="place"
+                       value="{{ values.place }}"
+                       placeholder="Bobst Library or https://..."
+                       maxlength="1000"
+                       required>
+                <p class="auth-help">
+                    For in-person sessions, enter a location.
+                    For virtual sessions, enter an HTTP/HTTPS link.
+                </p>
+            </div>
+
+            <div class="form-group">
+                <label for="min_participants">
+                    Minimum Participants
+                </label>
+                <input class="form-control"
+                       type="number"
+                       id="min_participants"
+                       name="min_participants"
+                       min="{{ min_allowed }}"
+                       max="{{ max_allowed }}"
+                       value="{{ values.min_participants }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="max_participants">
+                    Maximum Participants
+                </label>
+                <input class="form-control"
+                       type="number"
+                       id="max_participants"
+                       name="max_participants"
+                       min="{{ min_allowed }}"
+                       max="{{ max_allowed }}"
+                       value="{{ values.max_participants }}"
+                       required>
+            </div>
+
+            <button class="btn auth-submit" type="submit">
+                Save Changes
+            </button>
+
+            <p class="auth-switch">
+                <a href="{{ url_for('session_detail_page',
+                                     session_id=session_id) }}">
+                    Cancel and return to session details
+                </a>
+            </p>
+
+        </form>
+    </div>
+</section>
+
+{% endblock %}

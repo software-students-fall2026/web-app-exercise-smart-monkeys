@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}My Sessions | Study Group Finder{% endblock %}
+
+{% block content %}
+
+<h1 class="page-title">My Study Sessions</h1>
+<p>View the study sessions you've created or joined.</p>
+
+<h2>Sessions: Created</h2>
+
+<section class="session-grid">
+
+    {% for session in created_sessions %}
+    <article class="session-card">
+
+        <h3>{{ session.course }}</h3>
+
+        <p><strong>Topic:</strong> {{ session.topic }}</p>
+
+        <p>
+            <strong>Date:</strong>
+            {{ session.start_at | display_ny }}
+        </p>
+
+        <p>
+            <strong>Participants:</strong>
+            {{ session.participant_count }}
+            / {{ session.max_participants }}
+        </p>
+
+        <p>
+            <strong>Status:</strong>
+            {{ session.display_status | title }}
+        </p>
+
+        <a class="session-details-link"
+           href="{{ url_for('session_detail_page',
+                            session_id=session._id|string) }}">
+            View details
+        </a>
+
+    </article>
+    {% else %}
+    <p>You haven't created any sessions yet.</p>
+    {% endfor %}
+
+</section>
+
+<h2>Sessions: Joined</h2>
+
+<section class="session-grid">
+
+    {% for session in joined_sessions %}
+    <article class="session-card">
+
+        <h3>{{ session.course }}</h3>
+
+        <p><strong>Topic:</strong> {{ session.topic }}</p>
+
+        <p>
+            <strong>Date:</strong>
+            {{ session.start_at | display_ny }}
+        </p>
+
+        <p>
+            <strong>Participants:</strong>
+            {{ session.participant_count }}
+            / {{ session.max_participants }}
+        </p>
+
+        <p>
+            <strong>Status:</strong>
+            {{ session.display_status | title }}
+        </p>
+
+        <a class="session-details-link"
+           href="{{ url_for('session_detail_page',
+                            session_id=session._id|string) }}">
+            View details
+        </a>
+
+    </article>
+    {% else %}
+    <p>You haven't joined any sessions yet.</p>
+    {% endfor %}
+
+</section>
+
+{% endblock %}
