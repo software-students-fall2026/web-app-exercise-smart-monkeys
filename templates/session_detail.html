@@ -156,9 +156,10 @@
           and current_user.id == study_session.organizer_id|string
           and study_session.registration_open %}
 
-        <a href="{{ url_for('edit_session_page', session_id=study_session._id) }}">
-            Edit Session
-        </a>
+        <form method="GET"
+              action="{{ url_for('edit_session_page', session_id=study_session._id) }}">
+            <button type="submit">Edit Session</button>
+        </form>
 
         <form method="POST"
               action="{{ url_for('cancel_session_page', session_id=study_session._id) }}"
