@@ -8,7 +8,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from pymongo import ASCENDING, MongoClient, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 
 class DomainError(Exception):
@@ -123,6 +123,28 @@ class Store:
         except DuplicateKeyError as exc:
             raise DomainError("Email is already registered.", 409) from exc
         return user
+
+    def authenticate_user(self, email, password):
+        """Check credentials and return the user without signing them in."""
+        if (
+            not isinstance(email, str)
+            or not isinstance(password, str)
+            or not email.strip()
+            or not 1 <= len(password) <= 128
+        ):
+            raise DomainError("Invalid email or password.", 401)
+
+        document = self.users.find_one({
+            "email": email.strip().lower()
+        })
+
+        if document is None or not check_password_hash(
+            document["password_hash"], password
+        ):
+            raise DomainError("Invalid email or password.", 401)
+
+        return document
+
 
     def get_session(self, session_id):
         document = self.sessions.find_one({"_id": object_id(session_id)})

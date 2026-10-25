@@ -100,6 +100,35 @@
                 <li>No participant names available.</li>
             {% endfor %}
         </ul>
+                {% if current_user.is_authenticated %}
+            {% set is_participant = current_user.id in
+                (study_session.participant_ids | map('string') | list) %}
+
+            {% set is_organizer =
+                current_user.id == study_session.organizer_id|string %}
+
+            {% if is_organizer %}
+                <p>You are the organizer of this session.</p>
+
+            {% elif is_participant %}
+                <form method="POST"
+                      action="{{ url_for('leave_session_page', session_id=study_session._id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">Leave Session</button>
+                </form>
+
+            {% elif study_session.registration_open
+                    and study_session.participant_count < study_session.max_participants %}
+                <form method="POST"
+                      action="{{ url_for('join_session_page', session_id=study_session._id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit">Join Session</button>
+                </form>
+
+            {% else %}
+                <p>Joining this session is currently unavailable.</p>
+            {% endif %}
+        {% endif %}
     </article>
 
     {% if current_user.is_authenticated
