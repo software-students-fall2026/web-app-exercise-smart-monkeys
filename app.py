@@ -70,7 +70,10 @@ def create_app(test_config=None):
 
     @login_manager.unauthorized_handler
     def unauthorized():
-        return jsonify(error="Login required."), 401
+        if request.path.startswith("/api/"):
+            return jsonify(error="Login required."), 401
+
+        return redirect(url_for("login_page", next=request.path))
 
     @app.errorhandler(DomainError)
     def domain_error(error):
@@ -132,7 +135,7 @@ def create_app(test_config=None):
 
     def safe_login_destination(target):
         """Allow only known local pages after login."""
-        if target in ("/", "/search", "/sessions/new"):
+        if target in ("/", "/search", "/sessions/new", "/my-sessions"):
             return target
 
         if isinstance(target, str) and re.fullmatch(
@@ -522,6 +525,30 @@ def create_app(test_config=None):
             sessions.append(session_data)
 
         return render_template("index.html", sessions=sessions)
+
+    @app.get("/my-sessions")
+    @login_required
+    def my_sessions_page():
+        # Identify the currently logged-in student.
+        user_id = current_user.document["_id"]
+
+        # Find sessions created OR joined by this student.
+        query = {"$or": [{"organizer_id": user_id},{"participant_ids": user_id}]}
+
+        documents = store.sessions.find(query).sort([("start_at", -1), ("_id", -1)])
+
+        created_sessions = []
+        joined_sessions = []
+
+        for document in documents:
+            session_data = public_session(document)
+
+            if document["organizer_id"] == user_id:
+                created_sessions.append(session_data)
+            else:
+                joined_sessions.append(session_data)
+
+        return render_template("my_sessions.html", created_sessions=created_sessions, joined_sessions=joined_sessions)
 
     @app.post("/api/sessions")
     @login_required
