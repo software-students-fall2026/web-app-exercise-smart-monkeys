@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "0fe4492678c13413ed4974876293780b0417acab51ea44b738535ede119c99fd"
+            "sha256": "ad4ccb2fdfcdfae1c814713c33a656e66b41554987d51f96be4cf32db267c0a1"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -319,5 +319,47 @@
             "version": "==3.1.9"
         }
     },
-    "develop": {}
+    "develop": {
+        "iniconfig": {
+            "hashes": [
+                "sha256:67f4b9c50da0dedf52af349e7749a80a9057a5031199791b906c3bb3ae878960",
+                "sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7"
+            ],
+            "markers": "python_version >= '3.10'",
+            "version": "==2.3.1"
+        },
+        "packaging": {
+            "hashes": [
+                "sha256:94edc256424af38762eb31306eed28beb9f0efc50a8837492c9d6fd6004aed79",
+                "sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==26.3"
+        },
+        "pluggy": {
+            "hashes": [
+                "sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec",
+                "sha256:d1eaa46ebb595891b860ab086b4d09c8588af65ebd4361b8e8f4bb8920b90ba8"
+            ],
+            "markers": "python_version >= '3.10'",
+            "version": "==1.7.0"
+        },
+        "pygments": {
+            "hashes": [
+                "sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9",
+                "sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c"
+            ],
+            "markers": "python_version >= '3.9'",
+            "version": "==2.21.0"
+        },
+        "pytest": {
+            "hashes": [
+                "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313",
+                "sha256:37a86b45efb9a47a61a36449063e8e18d0cab3161329fc099eb21783169c4f0c"
+            ],
+            "index": "pypi",
+            "markers": "python_version >= '3.10'",
+            "version": "==9.1.1"
+        }
+    }
 }
