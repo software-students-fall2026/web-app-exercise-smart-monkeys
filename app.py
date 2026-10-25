@@ -14,7 +14,7 @@ from werkzeug.exceptions import HTTPException
 
 
 from config import Config
-from db import DomainError, Store, object_id, public_session, public_user, utcnow
+from db import DomainError, Store, object_id, parse_time, public_session, public_user, utcnow
 
 class MongoJSONProvider(DefaultJSONProvider):
     @staticmethod
@@ -455,6 +455,14 @@ def create_app(test_config=None):
             except (ValueError, OverflowError) as exc:
                 raise DomainError("date must be YYYY-MM-DD (UTC).") from exc
             query["start_at"] = {"$gte": start, "$lt": end}
+        if "start_from" in request.args or "start_to" in request.args:
+            if "date" in request.args:
+                raise DomainError("Use either date or start_from/start_to, not both.")
+            start_from = parse_time(request.args.get("start_from"))
+            start_to = parse_time(request.args.get("start_to"))
+            if start_to <= start_from:
+                raise DomainError("start_to must be after start_from.")
+            query["start_at"] = {"$gte": start_from, "$lt": start_to}
         for flag in ("mine", "available"):
             if flag in request.args and request.args[flag] not in ("true", "false"):
                 raise DomainError(f"{flag} must be true or false.")
