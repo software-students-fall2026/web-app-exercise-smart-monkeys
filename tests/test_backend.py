@@ -78,6 +78,57 @@ def test_create_browse_detail_search_and_permissions(app):
     assert write(owner, "PATCH", f"/api/sessions/{sid}", {"topic": "Updated topic"}).status_code == 200
     assert write(owner, "DELETE", f"/api/sessions/{sid}").status_code == 204
     assert owner.get(f"/api/sessions/{sid}").status_code == 404
+def test_similar_session_time_filter(app):
+    owner, _ = register(app)
+
+    # Create an existing study session.
+    session = create(owner)
+
+    # Use the session's actual start time.
+    from datetime import datetime, timedelta, timezone
+
+    start = datetime.fromisoformat(
+        session["start_at"].replace("Z", "+00:00")
+    )
+
+    # Search within one hour of its start time.
+    params = {
+        "course": session["course"],
+        "available": "true",
+        "start_from": (start - timedelta(hours=1)).isoformat(),
+        "start_to": (start + timedelta(hours=1)).isoformat(),
+    }
+
+    response = owner.get("/api/sessions", query_string=params)
+
+    assert response.status_code == 200
+    assert any(
+        s["_id"] == session["_id"]
+        for s in response.json["sessions"]
+    )
+
+    # Search a time window that excludes the session.
+    params["start_from"] = (
+        start + timedelta(hours=2)
+    ).isoformat()
+    params["start_to"] = (
+        start + timedelta(hours=3)
+    ).isoformat()
+
+    response = owner.get("/api/sessions", query_string=params)
+
+    assert response.status_code == 200
+    assert all(
+        s["_id"] != session["_id"]
+        for s in response.json["sessions"]
+    )
+
+    # An invalid time range should be rejected.
+    params["start_to"] = params["start_from"]
+
+    response = owner.get("/api/sessions", query_string=params)
+
+    assert response.status_code == 400
 
 
 @pytest.mark.parametrize("changes", [

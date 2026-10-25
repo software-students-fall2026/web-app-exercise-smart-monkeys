@@ -452,6 +452,36 @@ def create_app(test_config=None):
             except (ValueError, OverflowError) as exc:
                 raise DomainError("date must be YYYY-MM-DD (UTC).") from exc
             query["start_at"] = {"$gte": start, "$lt": end}
+        if "start_from" in request.args or "start_to" in request.args:
+            if "date" in request.args:
+                raise DomainError(
+                    "Use either date or a start time range, not both."
+                )
+
+            try:
+                start_from = datetime.fromisoformat(
+                    request.args["start_from"].replace("Z", "+00:00")
+                )
+                start_to = datetime.fromisoformat(
+                    request.args["start_to"].replace("Z", "+00:00")
+                )
+
+                if start_from.utcoffset() is None or start_to.utcoffset() is None:
+                    raise ValueError("Timezone required")
+
+                if start_from >= start_to:
+                    raise ValueError("Invalid time range")
+
+            except (KeyError, ValueError, OverflowError) as exc:
+                raise DomainError(
+                    "Provide valid start_from and start_to timestamps."
+                ) from exc
+
+            query.setdefault("start_at", {}).update({
+                "$gte": start_from.astimezone(timezone.utc),
+                "$lt": start_to.astimezone(timezone.utc)
+            })
+
         for flag in ("mine", "available"):
             if flag in request.args and request.args[flag] not in ("true", "false"):
                 raise DomainError(f"{flag} must be true or false.")
