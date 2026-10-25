@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 from bson import ObjectId
-from flask import Flask, jsonify, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from flask.json.provider import DefaultJSONProvider
 from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 from flask_wtf.csrf import CSRFError, CSRFProtect, generate_csrf
@@ -452,6 +452,17 @@ def create_app(test_config=None):
         document = store.leave_session(session_id, current_user.document["_id"])
         return jsonify(session=public_session(document))
 
+
+    @app.post("/sessions/<session_id>/delete")
+    @login_required
+    def delete_session_page(session_id):
+        try:
+            store.delete_session(session_id, current_user.document["_id"])
+            flash("Session permanently deleted.", "success")
+            return redirect(url_for("search_page"))
+        except DomainError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("session_detail_page", session_id=session_id))
     return app
 
 

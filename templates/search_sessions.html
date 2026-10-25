@@ -4,6 +4,11 @@
 
 {% block content %}
 <h1 class="page-title">Search Study Sessions</h1>
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+        <p role="status">{{ message }}</p>
+    {% endfor %}
+{% endwith %}
 <p>Find study groups by course, topic, date, and session type.</p>
 
 <form class="search-filters"

@@ -9,6 +9,11 @@
 
 <h1>Study Session Details</h1>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% for category, message in messages %}
+        <p role="alert">{{ message }}</p>
+    {% endfor %}
+{% endwith %}
 {% if error %}
     <p role="alert">{{ error }}</p>
 {% else %}
@@ -95,5 +100,24 @@
             {% endfor %}
         </ul>
     </article>
+    {% if current_user.is_authenticated
+          and current_user.id == study_session.organizer_id|string %}
+
+        <form method="POST"
+              action="{{ url_for('delete_session_page', session_id=study_session._id) }}">
+
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <p>Warning: Deleting this session is permanent and cannot be undone.</p>
+
+            <label>
+                <input type="checkbox" required>
+                I understand this session will be permanently deleted.
+            </label>
+
+            <button type="submit">Delete Session Permanently</button>
+        </form>
+
+    {% endif %}
 {% endif %}
 {% endblock %}
