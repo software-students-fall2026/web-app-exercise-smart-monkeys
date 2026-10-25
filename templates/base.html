@@ -25,10 +25,30 @@
                 ☰
             </button>
 
-            <div class="nav-links" id="nav-links">
-                <a href="/">Browse Sessions</a>
+                        <div class="nav-links" id="nav-links">
+                <a href="{{ url_for('home_page') }}">Browse Sessions</a>
                 <a href="{{ url_for('search_page') }}">Search Sessions</a>
-                <a href="/sessions/new">Create Session</a>
+                <a href="{{ url_for('create_session_page') }}">Create Session</a>
+
+                {% if current_user.is_authenticated %}
+                    <span class="nav-user">
+                        Hi, {{ current_user.document.name }}
+                    </span>
+
+                    <form class="nav-logout"
+                          action="{{ url_for('logout_page') }}"
+                          method="post">
+                        <input type="hidden"
+                               name="csrf_token"
+                               value="{{ csrf_token() }}">
+                        <button class="nav-logout-button" type="submit">
+                            Log out
+                        </button>
+                    </form>
+                {% else %}
+                    <a href="{{ url_for('signup_page') }}">Sign up</a>
+                    <a href="{{ url_for('login_page') }}">Log in</a>
+                {% endif %}
             </div>
         </nav>
     </header>
