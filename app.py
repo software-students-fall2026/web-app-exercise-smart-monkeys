@@ -70,7 +70,10 @@ def create_app(test_config=None):
 
     @login_manager.unauthorized_handler
     def unauthorized():
-        return jsonify(error="Login required."), 401
+        if request.path.startswith("/api/"):
+            return jsonify(error="Login required."), 401
+
+        return redirect(url_for("login_page", next=request.path))
 
     @app.errorhandler(DomainError)
     def domain_error(error):
@@ -132,7 +135,7 @@ def create_app(test_config=None):
 
     def safe_login_destination(target):
         """Allow only known local pages after login."""
-        if target in ("/", "/search", "/sessions/new"):
+        if target in ("/", "/search", "/sessions/new", "/my-sessions"):
             return target
 
         if isinstance(target, str) and re.fullmatch(
