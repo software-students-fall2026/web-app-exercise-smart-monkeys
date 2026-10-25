@@ -223,3 +223,55 @@ def test_virtual_session_and_invalid_search_inputs(app):
     assert public.get(f"/api/sessions/{document['_id']}").status_code == 401
     for query in ("date=bad", "date=9999-12-31", "page=0", "limit=101", "limit=no", "mine=yes"):
         assert public.get("/api/sessions?" + query).status_code == 400
+
+def test_delete_requires_confirmation(app):
+    owner, _ = register(app)
+    document = create(owner)
+    session_id = document["_id"]
+    url = f"/sessions/{session_id}/delete"
+
+    # Without confirmation, deletion must be rejected.
+    response = write(owner, "POST", url)
+    assert response.status_code == 302
+    assert owner.get(f"/api/sessions/{session_id}").status_code == 200
+
+    # With confirmation, deletion succeeds.
+    token = owner.get("/api/auth/csrf").json["csrf_token"]
+    response = owner.post(
+        url,
+        data={"confirm_delete": "yes"},
+        headers={"X-CSRFToken": token},
+    )
+    assert response.status_code == 302
+    assert owner.get(f"/api/sessions/{session_id}").status_code == 404
+    
+def test_cancel_session(app, store):
+    owner, owner_id = register(app)
+    member, _ = register(app, "member@example.test")
+
+    document = create(owner)
+    session_id = document["_id"]
+    cancel_url = f"/api/sessions/{session_id}/cancel"
+
+    # Only the organizer can cancel.
+    response = write(member, "POST", cancel_url)
+    assert response.status_code == 403
+
+    # The organizer can cancel successfully.
+    response = write(owner, "POST", cancel_url)
+    assert response.status_code == 200
+    assert response.json["session"]["status"] == "cancelled"
+    assert response.json["session"]["registration_open"] is False
+
+    # The cancelled session remains in the database.
+    saved = store.get_session(session_id)
+    assert saved["status"] == "cancelled"
+    assert saved["participant_ids"] == [owner_id]
+
+    # Nobody can join a cancelled session.
+    response = write(member, "POST", f"/api/sessions/{session_id}/join")
+    assert response.status_code == 409
+
+    # Cancelling the same session again is rejected.
+    response = write(owner, "POST", cancel_url)
+    assert response.status_code == 409

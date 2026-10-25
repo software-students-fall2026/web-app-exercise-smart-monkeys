@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Log In | Study Group Finder{% endblock %}
+
+{% block content %}
+<section class="auth-page">
+    <div class="auth-card auth-card--login">
+        <header class="auth-heading">
+            <p class="auth-eyebrow">Study Group Finder</p>
+            <h1>Welcome back</h1>
+            <p>Log in to connect with your study groups.</p>
+        </header>
+
+        <form action="{{ url_for('login_page') }}" method="post">
+            <input type="hidden"
+                   name="csrf_token"
+                   value="{{ csrf_token() }}">
+
+            <input type="hidden"
+                   name="next"
+                   value="{{ next_url }}">
+
+            {% if error %}
+                <div class="auth-error" role="alert">
+                    {{ error }}
+                </div>
+            {% endif %}
+
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input class="form-control"
+                       id="email"
+                       name="email"
+                       type="email"
+                       autocomplete="username"
+                       maxlength="254"
+                       placeholder="you@example.com"
+                       value="{{ email }}"
+                       required>
+            </div>
+
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input class="form-control"
+                       id="password"
+                       name="password"
+                       type="password"
+                       autocomplete="current-password"
+                       maxlength="128"
+                       required>
+            </div>
+
+            <button class="btn auth-submit" type="submit">
+                Log in
+            </button>
+        </form>
+
+        <p class="auth-switch">
+            Don't have an account?
+            <a href="{{ url_for('signup_page') }}">Sign up</a>
+        </p>
+    </div>
+</section>
+{% endblock %}
