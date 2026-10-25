@@ -198,6 +198,36 @@ class Store:
             raise DomainError("Session changed, registration closed, or capacity is below membership. Refresh and retry.", 409)
         return result
 
+    def cancel_session(self, session_id, user_id):
+        document = self.get_session(session_id)
+
+        if document["organizer_id"] != user_id:
+            raise DomainError("Only the organizer can cancel this session.", 403)
+
+        now = utcnow()
+
+        if document["status"] not in ("waiting", "confirmed") or document["start_at"] <= now:
+            raise DomainError("This session can no longer be cancelled.", 409)
+
+        result = self.sessions.find_one_and_update(
+            {
+                "_id": document["_id"],
+                "organizer_id": user_id,
+                "status": {"$in": ["waiting", "confirmed"]},
+                "start_at": {"$gt": now},
+            },
+            {
+                "$set": {"status": "cancelled", "updated_at": now},
+                "$inc": {"revision": 1},
+            },
+            return_document=ReturnDocument.AFTER,
+        )
+
+        if result is None:
+            raise DomainError("Session changed or can no longer be cancelled.", 409)
+
+        return result
+
     def delete_session(self, session_id, user_id):
         document = self.get_session(session_id)
         if document["organizer_id"] != user_id:
