@@ -309,7 +309,9 @@ def public_session(document):
     now = utcnow()
     before_deadline = document["start_at"] > now
     result["registration_open"] = document["status"] in ("waiting", "confirmed") and before_deadline
-    if document["status"] == "closed" or (document["status"] == "waiting" and not before_deadline):
+    if document["status"] == "cancelled":
+        result["display_status"] = "cancelled"
+    elif document["status"] == "closed" or (document["status"] == "waiting" and not before_deadline):
         # Underfilled past the deadline; cleanup persists "closed" shortly.
         result["display_status"] = "closed"
     elif document["end_at"] <= now:
