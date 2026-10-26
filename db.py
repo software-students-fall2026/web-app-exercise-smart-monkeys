@@ -157,6 +157,25 @@ class Store:
             raise DomainError("Unknown or read-only session fields.")
         now = utcnow()
         document = validate_session(data, settings, now)
+
+        # Prevent students from duplicating their own sessions.
+        duplicate = self.sessions.find_one({
+           "organizer_id": user_id,
+            "course": document["course"],
+            "topic": document["topic"],
+            "start_at": document["start_at"],
+            "end_at": document["end_at"],
+            "session_type": document["session_type"],
+            "location": document["location"],
+            "meeting_url": document["meeting_url"],
+            "status": {"$nin": ["cancelled", "closed"]},
+        })
+        if duplicate:
+            raise DomainError(
+                "You already created an identical study session. "
+                "Please use your existing session instead.",
+                409,
+            )
         # Registration stays open until start_at; the organizer is participant one.
         document.update(
             organizer_id=user_id, participant_ids=[user_id],
