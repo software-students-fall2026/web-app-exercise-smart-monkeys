@@ -209,5 +209,5 @@ Automatic similar-session suggestions, schedule-conflict detection, and the six
 frontend screens are not implemented in this backend foundation.
 
 ## Task boards
-
-See instructions. Delete this line and place a link to the task boards here.
+Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
+Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
