@@ -215,6 +215,11 @@ same course starting within an hour of the chosen time. Schedule-conflict
 detection is not implemented.
 
 ## Task boards
+<<<<<<< HEAD
 
 - Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
 - Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
+=======
+Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
+Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
+>>>>>>> 0490e7f8645ec70bf644b8838facf0e97ea9edc4
