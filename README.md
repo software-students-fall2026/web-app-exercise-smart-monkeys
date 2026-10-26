@@ -10,15 +10,100 @@ Our goal is to help university students find study partners and organize collabo
 
 All user stories for our Study Group Finder application can be found in our [GitHub Issues](https://github.com/software-students-fall2026/web-app-exercise-smart-monkeys/issues).
 
+
 ## Steps necessary to run the software
 
-The app is a Flask application backed by MongoDB. One server serves both the
-website pages and the JSON API.
+Study Group Finder is a Flask web application using MongoDB for persistent data storage. Flask serves both the HTML website and the JSON API. The application runs locally and does not require deployment.
 
-### 1. Install and start MongoDB
+### 1. Prerequisites
 
-Use Python 3.11 or newer and a running MongoDB Community server (8.0 recommended).
-For macOS with Homebrew:
+Before starting, ensure you have:
+
+- Python 3.11 or newer
+- Git
+- A MongoDB database (local MongoDB Community Server or MongoDB Atlas)
+- An internet connection if using MongoDB Atlas
+
+Check Python and Git:
+
+```bash
+python --version
+git --version
+```
+
+On macOS/Linux, `python3` may be required instead of `python`.
+
+### 2. Clone the repository
+
+Open a terminal and run:
+
+```bash
+git clone https://github.com/software-students-fall2026/web-app-exercise-smart-monkeys.git
+cd web-app-exercise-smart-monkeys
+```
+
+Team contributors must also run the required repository setup script once per clone:
+
+**macOS/Linux:**
+```bash
+python3 .automations/setup.py
+```
+
+**Windows:**
+```powershell
+python .automations/setup.py
+```
+
+Follow any setup instructions displayed by the script.
+
+### 3. Create a Python virtual environment
+
+**macOS/Linux:**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows PowerShell:**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell blocks activation, you can run the virtual environment's Python directly using `.\.venv\Scripts\python.exe`.
+
+### 4. Install dependencies
+
+With the virtual environment activated, run:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
+This installs the Python dependencies required by the application.
+
+### 5. Configure MongoDB
+
+The application supports either a local MongoDB server or MongoDB Atlas.
+
+**Option A — MongoDB Atlas (recommended for team testing)**
+
+Use the MongoDB Atlas connection credentials shared privately through the team's course communication channel.
+
+Ensure that:
+- The database user has the necessary access permissions.
+- Your IP address is permitted by Atlas Network Access settings.
+- The connection string is configured in `.env`.
+
+**Option B — Local MongoDB**
+
+Install MongoDB Community Server and start the database service.
+
+See the [official MongoDB installation guide](https://www.mongodb.com/docs/manual/installation/).
+
+For macOS using Homebrew:
 
 ```bash
 brew tap mongodb/brew
@@ -26,94 +111,177 @@ brew install mongodb-community@8.0
 brew services start mongodb-community@8.0
 ```
 
-See the [official macOS installation guide](https://www.mongodb.com/docs/v8.0/tutorial/install-mongodb-on-os-x/)
-or [installation instructions for other operating systems](https://www.mongodb.com/docs/manual/installation/).
-MongoDB must be running separately from Flask. Its data persists on disk after
-Flask stops. `localhost` connects to each developer's own computer, so these
-local databases are not shared between teammates.
+For Windows, install MongoDB Community Server using the official Windows installer and ensure the MongoDB service is running.
 
-### 2. Configure Python and environment variables
+The default local connection is:
 
-```bash
-git clone https://github.com/software-students-fall2026/web-app-exercise-smart-monkeys.git
-cd web-app-exercise-smart-monkeys
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+```text
+mongodb://localhost:27017/
 ```
 
-On Windows, activate with `.venv\Scripts\activate` instead. If `.env` does not
-already exist, copy `env.example` to `.env`. Set `SECRET_KEY` to the output of:
+### 6. Create the `.env` file
+
+The application reads database credentials and configuration settings from `.env`.
+
+Copy the provided example file:
+
+**macOS/Linux:**
+
+```bash
+cp env.example .env
+```
+
+**Windows PowerShell:**
+
+```powershell
+Copy-Item env.example .env
+```
+
+Open `.env` and configure the values for your chosen database.
+
+For a local database, the relevant settings are:
+
+```dotenv
+MONGODB_URI=mongodb://localhost:27017/
+MONGODB_DB=study_group_finder
+SECRET_KEY=replace-with-a-secure-random-secret
+```
+
+For MongoDB Atlas, replace `MONGODB_URI` with your Atlas connection string.
+
+Generate a secure Flask secret key using:
 
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-The local database settings are:
+Copy the generated value into `SECRET_KEY` in `.env`.
 
-```dotenv
-MONGODB_URI=mongodb://localhost:27017/
-MONGODB_DB=study_group_finder
-```
+**Important:**
+- Never commit `.env` to GitHub.
+- `env.example` must contain dummy values only.
+- Share real credentials privately with teammates and course staff through the approved course messaging channel.
+- Shell environment variables override values in `.env`.
+- Flask workers using the same application must share a consistent `SECRET_KEY`.
 
-`config.py` loads `.env` and reads all settings. Variables exported in the shell
-take precedence over `.env`; code defaults are used when neither sets a value.
-Keep the same `SECRET_KEY` for all web workers so login cookies work across them.
-`.env` is ignored by Git. Do not commit passwords or real connection credentials.
+### 7. Start the application
 
-### 3. Seed and run
-
-From the repository root with the virtual environment active:
+From the repository's root directory, with the virtual environment activated, run:
 
 ```bash
-python seed.py
 python app.py
 ```
 
-Check `http://127.0.0.1:5000/api/health`, then open `http://127.0.0.1:5000/` for
-the website. Indexes are created automatically on startup.
-The seed script inserts four sample sessions and one local demo account:
-`organizer@example.test` / `StudyDemo2026!`. It preserves existing records on
-subsequent runs; it does not refresh expired sample sessions. Do not run this
-demo seeder against a production database.
+The application should start at:
 
-In a second terminal, activate the same virtual environment and run exactly one
-cleanup process:
+**http://127.0.0.1:5000/**
+
+Open this address in a web browser to access Study Group Finder.
+
+To check database connectivity, visit:
+
+**http://127.0.0.1:5000/api/health**
+
+A successful connection returns:
+
+```json
+{"status": "ok"}
+```
+
+You can now create an account, log in, browse sessions, create study groups, and use the application's features.
+
+Stop the Flask server with `Ctrl+C`.
+
+### 8. Optional: Load demonstration data
+
+For a disposable local database, sample data can be inserted using:
+
+```bash
+python seed.py
+```
+
+The script creates sample study sessions and a demonstration account:
+
+- Email: `organizer@example.test`
+- Password: `StudyDemo2026!`
+
+The seeder preserves existing records and does not refresh expired sessions.
+
+**Do not run the demo seeder against the team's shared Atlas database or a production database.**
+
+You can also register your own account through the website without running the seeder.
+
+### 9. Run session cleanup
+
+The application includes a cleanup process for updating session statuses after registration deadlines.
+
+In a separate terminal, with the virtual environment activated, run:
 
 ```bash
 python cleanup.py
-# Or perform one pass and exit:
+```
+
+To perform one cleanup pass and exit:
+
+```bash
 python cleanup.py --once
 ```
 
-For a two-worker demo on macOS/Linux, use this **instead of** `python app.py`:
+Only one cleanup process is needed for a shared application database. Teammates connected to the same Atlas database should coordinate rather than each starting a cleanup process.
 
-```bash
-gunicorn --workers 2 --bind 127.0.0.1:5000 'app:create_app()'
-```
+Stop the continuous process using `Ctrl+C`.
 
-Do not add `--preload`: each worker must construct its own MongoDB client after
-forking. Cleanup is not started inside Flask workers. Stop foreground processes
-with Ctrl+C. Restart them after changing environment settings.
+### 10. Run automated tests
 
-### 4. Test
+Automated tests use disposable databases and require a running MongoDB server.
 
-Tests require a running real MongoDB server and use a uniquely named disposable
-database per test; they never delete the application database.
+**Do not run the test suite against the team's shared application database.**
+
+Install the testing dependencies:
 
 ```bash
 python -m pip install -r requirements-dev.txt
+```
+
+Configure the test database server and run Pytest.
+
+**macOS/Linux:**
+
+```bash
+TEST_MONGO_URI=mongodb://127.0.0.1:27017/ python -m pytest -q
+```
+
+**Windows PowerShell:**
+
+```powershell
+$env:TEST_MONGO_URI = "mongodb://127.0.0.1:27017/"
 python -m pytest -q
 ```
 
-To use another local test server:
+The tests cover authentication, session management, permissions, validation, database operations, concurrency, and related functionality.
 
-```bash
-TEST_MONGO_URI=mongodb://127.0.0.1:27018/ python -m pytest -q
-```
+Successful execution displays the number of passing tests.
 
-Tests cover authentication, permissions, validation, CRUD, membership, deadlines,
-cleanup, repeatable seeding, and concurrent attempts to take the last seat.
+### 11. Troubleshooting
+
+**MongoDB connection error**
+- Confirm MongoDB is running or Atlas is reachable.
+- Verify `MONGODB_URI` and `MONGODB_DB` in `.env`.
+- For Atlas, check the database user's permissions and allowed network access.
+
+**Python module not found**
+- Activate the virtual environment.
+- Reinstall dependencies using `python -m pip install -r requirements.txt`.
+
+**SECRET_KEY error**
+- Generate a valid secret key and save it in `.env`.
+
+**Port 5000 already in use**
+- Stop the other application using port 5000 before restarting Flask.
+
+**Application changes not appearing**
+- Stop Flask with `Ctrl+C`.
+- Pull the latest code if appropriate, then restart the application.
 
 ### Backend integration
 
@@ -215,8 +383,8 @@ same course starting within an hour of the chosen time. Schedule-conflict
 detection is not implemented.
 
 ## Task boards
-Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
 
+Our development work was organised into two sprints, with user stories tracked using GitHub Projects.
 
-Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
-
+- [Smart Monkeys — Sprint 1 Task Board](https://github.com/orgs/software-students-fall2026/projects/47/views/1)
+- [Smart Monkeys — Sprint 2 Task Board](https://github.com/orgs/software-students-fall2026/projects/47/views/4)
