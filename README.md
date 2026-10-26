@@ -216,5 +216,7 @@ detection is not implemented.
 
 ## Task boards
 Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
+
+
 Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
 
