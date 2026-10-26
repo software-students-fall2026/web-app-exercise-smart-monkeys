@@ -312,6 +312,7 @@ def test_cancel_session(app, store):
     response = write(owner, "POST", cancel_url)
     assert response.status_code == 200
     assert response.json["session"]["status"] == "cancelled"
+    assert response.json["session"]["display_status"] == "cancelled"
     assert response.json["session"]["registration_open"] is False
 
     # The cancelled session remains in the database.
@@ -326,3 +327,12 @@ def test_cancel_session(app, store):
     # Cancelling the same session again is rejected.
     response = write(owner, "POST", cancel_url)
     assert response.status_code == 409
+
+    # A cancelled session should still display Cancelled after its end time.
+    from datetime import timedelta
+    from db import public_session, utcnow
+
+    past_session = dict(saved)
+    past_session["end_at"] = utcnow() - timedelta(hours=1)
+
+    assert public_session(past_session)["display_status"] == "cancelled"
