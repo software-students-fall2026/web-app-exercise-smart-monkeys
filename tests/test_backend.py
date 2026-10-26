@@ -78,6 +78,71 @@ def test_create_browse_detail_search_and_permissions(app):
     assert write(owner, "PATCH", f"/api/sessions/{sid}", {"topic": "Updated topic"}).status_code == 200
     assert write(owner, "DELETE", f"/api/sessions/{sid}").status_code == 204
     assert owner.get(f"/api/sessions/{sid}").status_code == 404
+
+def test_prevent_duplicate_study_sessions(app, store):
+    owner, _ = register(app)
+
+    # Create the first study session.
+    session_data = payload()
+    first = write(owner, "POST", "/api/sessions", session_data)
+    assert first.status_code == 201
+
+    # Try creating the exact same session again.
+    duplicate = write(owner, "POST", "/api/sessions", session_data)
+    assert duplicate.status_code == 409
+    assert "identical study session" in duplicate.json["error"].lower()
+
+    # Confirm only one session was saved.
+    assert store.sessions.count_documents({
+        "course": session_data["course"],
+        "topic": session_data["topic"],
+    }) == 1
+
+
+def test_virtual_sessions_with_different_urls(app):
+    owner, _ = register(app)
+
+    data = payload(
+        session_type="virtual",
+        meeting_url="https://zoom.us/abc",
+    )
+    data.pop("location", None)
+
+    first = write(owner, "POST", "/api/sessions", data)
+    assert first.status_code == 201
+
+    # Different URL at the same time is allowed.
+    different_url = dict(data)
+    different_url["meeting_url"] = "https://zoom.us/xyz"
+
+    second = write(owner, "POST", "/api/sessions", different_url)
+    assert second.status_code == 201
+
+    # Same URL with identical details is rejected.
+    duplicate = write(owner, "POST", "/api/sessions", data)
+    assert duplicate.status_code == 409
+
+
+def test_different_students_can_create_identical_sessions(app, store):
+    student1, _ = register(app)
+    student2, _ = register(app, "student2@example.test")
+
+    session_data = payload()
+
+    # First student creates a session.
+    first = write(student1, "POST", "/api/sessions", session_data)
+    assert first.status_code == 201
+
+    # Second student creates a session with identical details.
+    second = write(student2, "POST", "/api/sessions", session_data)
+    assert second.status_code == 201
+
+    # Both sessions should exist in the database.
+    assert store.sessions.count_documents({
+        "course": session_data["course"],
+        "topic": session_data["topic"],
+    }) == 2
+    
 def test_similar_session_time_filter(app):
     owner, _ = register(app)
 
