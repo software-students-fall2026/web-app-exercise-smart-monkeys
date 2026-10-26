@@ -176,6 +176,21 @@ class Store:
                 "Please use your existing session instead.",
                 409,
             )
+
+            # Prevent an organizer from creating overlapping study sessions.
+        overlapping = self.sessions.find_one({
+            "organizer_id": user_id,
+            "status": {"$nin": ["cancelled", "closed"]},
+            "start_at": {"$lt": document["end_at"]},
+            "end_at": {"$gt": document["start_at"]},
+        })
+
+        if overlapping:
+            raise DomainError(
+                "You already have a study session scheduled during this time. "
+                "Please choose a different time.",
+                409,
+            )
         # Registration stays open until start_at; the organizer is participant one.
         document.update(
             organizer_id=user_id, participant_ids=[user_id],

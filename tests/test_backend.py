@@ -108,20 +108,60 @@ def test_virtual_sessions_with_different_urls(app):
     )
     data.pop("location", None)
 
+    # First virtual session is allowed.
     first = write(owner, "POST", "/api/sessions", data)
     assert first.status_code == 201
 
-    # Different URL at the same time is allowed.
+    # Same organizer cannot create an overlapping virtual session,
+    # even when the meeting URL is different.
     different_url = dict(data)
     different_url["meeting_url"] = "https://zoom.us/xyz"
 
     second = write(owner, "POST", "/api/sessions", different_url)
-    assert second.status_code == 201
+    assert second.status_code == 409
 
-    # Same URL with identical details is rejected.
+    # An exact duplicate is also rejected.
     duplicate = write(owner, "POST", "/api/sessions", data)
     assert duplicate.status_code == 409
+   
+def test_in_person_and_virtual_sessions_cannot_overlap(app):
+    owner, _ = register(app)
 
+    # Create an in-person session.
+    first = write(owner, "POST", "/api/sessions", payload())
+    assert first.status_code == 201
+
+    # Try creating a virtual session at the same time.
+    virtual_data = payload(
+        session_type="virtual",
+        meeting_url="https://zoom.us/test123",
+    )
+    virtual_data.pop("location", None)
+
+    second = write(owner, "POST", "/api/sessions", virtual_data)
+
+    # The same organizer cannot have overlapping sessions.
+    assert second.status_code == 409
+def test_partially_overlapping_sessions_rejected(app):
+    owner, _ = register(app)
+
+    # Create a session from 3 PM to 4 PM (relative times).
+    first_data = payload()
+    first = write(owner, "POST", "/api/sessions", first_data)
+    assert first.status_code == 201
+
+    # Create another session that starts 30 minutes later.
+    from datetime import datetime, timedelta
+
+    original_start = datetime.fromisoformat(first_data["start_at"])
+    second_data = payload(
+        topic="Different topic",
+        start_at=(original_start + timedelta(minutes=30)).isoformat(),
+        end_at=(original_start + timedelta(hours=1, minutes=30)).isoformat(),
+    )
+
+    second = write(owner, "POST", "/api/sessions", second_data)
+    assert second.status_code == 409
 
 def test_different_students_can_create_identical_sessions(app, store):
     student1, _ = register(app)
@@ -142,7 +182,7 @@ def test_different_students_can_create_identical_sessions(app, store):
         "course": session_data["course"],
         "topic": session_data["topic"],
     }) == 2
-    
+
 def test_similar_session_time_filter(app):
     owner, _ = register(app)
 
@@ -301,9 +341,21 @@ def test_concurrent_duplicate_joins(app, store):
 
 def test_cleanup_closes_underfilled_and_confirms_filled_sessions(app, store):
     owner, _ = register(app)
-    underfilled = create(owner)
-    sufficient = create(owner, min_participants=2)
-    future = create(owner)
+
+    start = utcnow() + timedelta(days=2)
+
+    underfilled = create(
+        owner,
+        start_at=start.isoformat(),
+        end_at=(start + timedelta(hours=1)).isoformat(),
+    )
+
+    sufficient = create(
+        owner,
+        min_participants=2,
+        start_at=(start + timedelta(hours=2)).isoformat(),
+        end_at=(start + timedelta(hours=3)).isoformat(),
+    )
     store.join_session(sufficient["_id"], ObjectId())
     # Backdate both deadlines; reset "sufficient" to waiting so the sweep settles it.
     store.sessions.update_many(
@@ -313,6 +365,11 @@ def test_cleanup_closes_underfilled_and_confirms_filled_sessions(app, store):
     assert store.cleanup_expired() == {"closed": 1, "confirmed": 1}
     assert store.get_session(underfilled["_id"])["status"] == "closed"
     assert store.get_session(sufficient["_id"])["status"] == "confirmed"
+    future = create(
+        owner,
+        start_at=(start + timedelta(hours=4)).isoformat(),
+        end_at=(start + timedelta(hours=5)).isoformat(),
+    )
     assert store.get_session(future["_id"])["status"] == "waiting"
     assert store.cleanup_expired() == {"closed": 0, "confirmed": 0}
 
