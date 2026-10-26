@@ -378,9 +378,7 @@ const response = await fetch('/api/sessions', {
 - One independent cleanup process is sufficient; no lease-lock collection is
   needed. Cleanup uses conditional database writes and is safe to rerun.
 
-While creating a session, the form suggests existing joinable sessions for the
-same course starting within an hour of the chosen time. Schedule-conflict
-detection is not implemented.
+While creating a session, the form suggests existing joinable sessions for the same course starting within one hour of the selected time. Additionally, the application prevents organizers from creating new study sessions that overlap with their own existing sessions, helping avoid duplicate bookings and scheduling conflicts.
 
 ## Task boards
 
