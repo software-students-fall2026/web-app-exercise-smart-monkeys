@@ -8,11 +8,12 @@ Our goal is to help university students find study partners and organize collabo
 
 ## User stories
 
-All user stories for our Study Group Finder application can be found in our [GitHub Issues](https://github.com/Abel200595/web-app-exercise-smart-monkeys/issues).
+All user stories for our Study Group Finder application can be found in our [GitHub Issues](https://github.com/software-students-fall2026/web-app-exercise-smart-monkeys/issues).
+
 ## Steps necessary to run the software
 
-The backend is a Flask JSON API backed by MongoDB. Frontend screens are still to
-be integrated by the team; opening `/` does not display a website yet.
+The app is a Flask application backed by MongoDB. One server serves both the
+website pages and the JSON API.
 
 ### 1. Install and start MongoDB
 
@@ -34,7 +35,7 @@ local databases are not shared between teammates.
 ### 2. Configure Python and environment variables
 
 ```bash
-git clone https://github.com/Abel200595/web-app-exercise-smart-monkeys.git
+git clone https://github.com/software-students-fall2026/web-app-exercise-smart-monkeys.git
 cd web-app-exercise-smart-monkeys
 python3 -m venv .venv
 source .venv/bin/activate
@@ -51,8 +52,8 @@ python -c "import secrets; print(secrets.token_hex(32))"
 The local database settings are:
 
 ```dotenv
-MONGO_URI=mongodb://localhost:27017/
-MONGO_DB_NAME=study_group_finder
+MONGODB_URI=mongodb://localhost:27017/
+MONGODB_DB=study_group_finder
 ```
 
 `config.py` loads `.env` and reads all settings. Variables exported in the shell
@@ -69,8 +70,8 @@ python seed.py
 python app.py
 ```
 
-Check `http://127.0.0.1:5000/api/health` and browse
-`http://127.0.0.1:5000/api/sessions`. Indexes are created automatically on startup.
+Check `http://127.0.0.1:5000/api/health`, then open `http://127.0.0.1:5000/` for
+the website. Indexes are created automatically on startup.
 The seed script inserts four sample sessions and one local demo account:
 `organizer@example.test` / `StudyDemo2026!`. It preserves existing records on
 subsequent runs; it does not refresh expired sample sessions. Do not run this
@@ -132,13 +133,16 @@ ISO 8601 UTC strings. Submit times with an explicit timezone (`Z` or an offset).
 | POST | `/api/sessions` | Create a session |
 | GET | `/api/sessions/<id>` | View details and participant names |
 | PATCH | `/api/sessions/<id>` | Organizer edits before registration closes |
-| DELETE | `/api/sessions/<id>` | Organizer deletes/cancels a session |
+| DELETE | `/api/sessions/<id>` | Organizer permanently deletes a session |
+| POST | `/api/sessions/<id>/cancel` | Organizer cancels; the record is kept |
 | POST | `/api/sessions/<id>/join` | Join before the deadline |
 | POST | `/api/sessions/<id>/leave` | Leave a joined session |
 
 Browse filters: `course`, `topic` (case-insensitive literal substring), `date`
-(`YYYY-MM-DD`, UTC), `session_type` (`in_person` or `virtual`), `mine=true`,
-`available=true`, `page` (default 1), and `limit` (default 20, maximum 100).
+(`YYYY-MM-DD`, UTC), `start_from` and `start_to` (a time window; send both, with
+timezones, and do not also send `date`), `session_type` (`in_person` or
+`virtual`), `mine=true`, `available=true`, `page` (default 1), and `limit`
+(default 20, maximum 100).
 `mine=true`, detail, and write endpoints require login. Public browse responses
 exclude location, meeting links, and member IDs.
 
@@ -180,7 +184,8 @@ const response = await fetch('/api/sessions', {
 - `sessions`: course/topic, start/end, type/location/link, organizer ID,
   participant ID array, participant limits, status, revision and timestamps.
 - The organizer is automatically the first participant and cannot leave their
-  own session; they can delete it. Membership is stored only on the session.
+  own session; they can cancel or delete it. Membership is stored only on the
+  session.
 - Defaults are minimum 2, maximum 8. Explicit values in the create request take
   priority over the defaults. Overrides must satisfy `2 <= min <= max <= 40`,
   with bounds/defaults configurable in the environment.
@@ -198,16 +203,18 @@ const response = await fetch('/api/sessions', {
   still `waiting` after the deadline: `closed` below minimum, `confirmed`
   otherwise. Confirmed participants may leave until the session ends; dropping
   below minimum after the deadline also closes the session.
-- `display_status` derives `full`, `completed` (after end time), or `closed`
-  (including waiting sessions past the deadline pending cleanup); persisted
-  status is `waiting`, `confirmed`, or `closed`. Cancellation by the organizer
-  is a physical deletion, so there is no retained `cancelled` record.
+- `display_status` derives `full`, `completed` (after end time), `cancelled`, or
+  `closed` (including waiting sessions past the deadline pending cleanup);
+  persisted status is `waiting`, `confirmed`, `closed`, or `cancelled`. The
+  organizer can cancel a session, which keeps the record, or delete it for good.
 - One independent cleanup process is sufficient; no lease-lock collection is
   needed. Cleanup uses conditional database writes and is safe to rerun.
 
-Automatic similar-session suggestions, schedule-conflict detection, and the six
-frontend screens are not implemented in this backend foundation.
+While creating a session, the form suggests existing joinable sessions for the
+same course starting within an hour of the chosen time. Schedule-conflict
+detection is not implemented.
 
 ## Task boards
 
-See instructions. Delete this line and place a link to the task boards here.
+- Sprint 1: https://github.com/orgs/software-students-fall2026/projects/47/views/1
+- Sprint 2: https://github.com/orgs/software-students-fall2026/projects/47/views/4
